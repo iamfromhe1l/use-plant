@@ -1,0 +1,7 @@
+import { AuthForm } from '@/components/auth-form';
+import * as React from 'react';
+import { View } from 'react-native';
+
+export default function SignUp() {
+  return <View className='flex-1 justify-center items-center'><AuthForm isRegister /></View>
+}

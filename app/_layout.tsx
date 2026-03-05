@@ -1,3 +1,4 @@
+import { AuthProvider } from '@/contexts/auth-context/auth-context';
 import '@/global.css';
 
 import { NAV_THEME } from '@/lib/theme';
@@ -8,7 +9,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useUniwind } from 'uniwind';
 
 export {
-  // Catch any errors thrown by the Layout component.
   ErrorBoundary,
 } from 'expo-router';
 
@@ -16,10 +16,16 @@ export default function RootLayout() {
   const { theme } = useUniwind();
 
   return (
-    <ThemeProvider value={NAV_THEME[theme ?? 'light']}>
-      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-      <Stack />
-      <PortalHost />
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider value={NAV_THEME[theme ?? 'light']}>
+        <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+        <Stack>
+          <Stack.Screen options={{ headerShown: false }} name="index" />
+          <Stack.Screen options={{ headerShown: false }} name="(auth)" />
+          <Stack.Screen options={{ headerShown: false }} name="(app)" />
+        </Stack>
+        <PortalHost />
+      </ThemeProvider>
+    </AuthProvider>
   );
 }

@@ -970,6 +970,19 @@
     resolve-from "^5.0.0"
     semver "^7.6.0"
 
+"@expo/image-utils@^0.8.12":
+  version "0.8.12"
+  resolved "https://registry.yarnpkg.com/@expo/image-utils/-/image-utils-0.8.12.tgz#56e34b9555745ad4d11c972fe0d1ce71c7c64c41"
+  integrity sha512-3KguH7kyKqq7pNwLb9j6BBdD/bjmNwXZG/HPWT6GWIXbwrvAJt2JNyYTP5agWJ8jbbuys1yuCzmkX+TU6rmI7A==
+  dependencies:
+    "@expo/spawn-async" "^1.7.2"
+    chalk "^4.0.0"
+    getenv "^2.0.0"
+    jimp-compact "0.16.1"
+    parse-png "^2.1.0"
+    resolve-from "^5.0.0"
+    semver "^7.6.0"
+
 "@expo/image-utils@^0.8.8":
   version "0.8.8"
   resolved "https://registry.yarnpkg.com/@expo/image-utils/-/image-utils-0.8.8.tgz#db5d460fd0c7101b10e9d027ffbe42f9cf115248"
@@ -3555,6 +3568,13 @@ expo-linking@~8.0.10:
     expo-constants "~18.0.12"
     invariant "^2.2.4"
 
+expo-location@^55.1.2:
+  version "55.1.2"
+  resolved "https://registry.yarnpkg.com/expo-location/-/expo-location-55.1.2.tgz#79056070bd3fc8ef393a0ea699bdba0fa3771fd8"
+  integrity sha512-QT/9Hh0mjBnsJD1A6VYVKskFK9PODTpHVMA3DmGDTbvKS55yhY/fj6f28dn3zAYTaLAWIZa5j3/C+LCJSq7kwA==
+  dependencies:
+    "@expo/image-utils" "^0.8.12"
+
 expo-manifests@~1.0.10:
   version "1.0.10"
   resolved "https://registry.yarnpkg.com/expo-manifests/-/expo-manifests-1.0.10.tgz#5dfb3db1cdf6b46fee349f1d68a25edf5e087994"
@@ -3580,6 +3600,11 @@ expo-modules-core@3.0.29:
   integrity sha512-LzipcjGqk8gvkrOUf7O2mejNWugPkf3lmd9GkqL9WuNyeN2fRwU0Dn77e3ZUKI3k6sI+DNwjkq4Nu9fNN9WS7Q==
   dependencies:
     invariant "^2.2.4"
+
+expo-network@^55.0.8:
+  version "55.0.8"
+  resolved "https://registry.yarnpkg.com/expo-network/-/expo-network-55.0.8.tgz#2cbe46a08d1349ce48fa798ac726177c5919c3f1"
+  integrity sha512-IXxwFq5B2OImc6BvHHGN9QOCYfMk3wPnbBL+NiyBFqy+g2LsdnGzWLA2HXD8+1Ngdvi7PwckQO+q6WKHLRx4Vw==
 
 expo-router@~6.0.19:
   version "6.0.23"

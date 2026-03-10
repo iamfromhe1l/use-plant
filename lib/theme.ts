@@ -2,56 +2,76 @@ import { DarkTheme, DefaultTheme, type Theme } from '@react-navigation/native';
 
 export const THEME = {
   light: {
-    background: 'hsl(120 30% 98%)',
-    foreground: 'hsl(150 30% 15%)',
-    card: 'hsl(120 25% 96%)',
-    cardForeground: 'hsl(150 30% 15%)',
-    popover: 'hsl(120 25% 96%)',
-    popoverForeground: 'hsl(150 30% 15%)',
-    primary: 'hsl(145 35% 35%)',
-    primaryForeground: 'hsl(120 30% 98%)',
-    secondary: 'hsl(130 25% 88%)',
-    secondaryForeground: 'hsl(150 30% 20%)',
-    muted: 'hsl(130 20% 90%)',
-    mutedForeground: 'hsl(150 20% 40%)',
-    accent: 'hsl(140 30% 85%)',
-    accentForeground: 'hsl(150 30% 20%)',
-    destructive: 'hsl(10 60% 65%)',
-    border: 'hsl(140 25% 85%)',
-    input: 'hsl(140 25% 85%)',
-    ring: 'hsl(145 35% 45%)',
-    radius: '1.25rem',
-    chart1: 'hsl(145 40% 45%)',
-    chart2: 'hsl(125 35% 50%)',
-    chart3: 'hsl(165 35% 40%)',
-    chart4: 'hsl(105 30% 50%)',
-    chart5: 'hsl(185 35% 45%)',
+    background: 'hsl(110 35% 96%)',
+    foreground: 'hsl(150 35% 18%)',
+
+    card: 'hsl(110 30% 92%)',
+    cardForeground: 'hsl(150 35% 18%)',
+
+    popover: 'hsl(110 30% 92%)',
+    popoverForeground: 'hsl(150 35% 18%)',
+
+    primary: 'hsl(145 45% 25%)',
+    primaryForeground: 'hsl(110 40% 97%)',
+
+    secondary: 'hsl(110 28% 88%)',
+    secondaryForeground: 'hsl(145 35% 22%)',
+
+    muted: 'hsl(110 18% 82%)',
+    mutedForeground: 'hsl(145 15% 40%)',
+
+    accent: 'hsl(110 35% 85%)',
+    accentForeground: 'hsl(145 35% 22%)',
+
+    destructive: 'hsl(8 65% 60%)',
+
+    border: 'hsl(110 20% 86%)',
+    input: 'hsl(110 20% 86%)',
+    ring: 'hsl(145 45% 35%)',
+
+    radius: '1.5rem',
+
+    chart1: 'hsl(145 45% 35%)',
+    chart2: 'hsl(120 40% 45%)',
+    chart3: 'hsl(160 40% 35%)',
+    chart4: 'hsl(100 35% 45%)',
+    chart5: 'hsl(180 35% 40%)',
   },
   dark: {
-    background: 'hsl(150 25% 12%)',
-    foreground: 'hsl(120 20% 92%)',
-    card: 'hsl(150 25% 15%)',
-    cardForeground: 'hsl(120 20% 92%)',
-    popover: 'hsl(150 25% 15%)',
-    popoverForeground: 'hsl(120 20% 92%)',
-    primary: 'hsl(145 30% 55%)',
-    primaryForeground: 'hsl(150 25% 12%)',
-    secondary: 'hsl(150 20% 22%)',
-    secondaryForeground: 'hsl(120 20% 92%)',
-    muted: 'hsl(150 20% 20%)',
-    mutedForeground: 'hsl(120 15% 70%)',
-    accent: 'hsl(145 25% 30%)',
-    accentForeground: 'hsl(120 20% 92%)',
-    destructive: 'hsl(10 50% 55%)',
-    border: 'hsl(150 20% 25%)',
-    input: 'hsl(150 20% 25%)',
-    ring: 'hsl(145 30% 50%)',
-    radius: '1.25rem',
-    chart1: 'hsl(145 35% 55%)',
-    chart2: 'hsl(125 30% 60%)',
-    chart3: 'hsl(165 30% 50%)',
-    chart4: 'hsl(105 25% 60%)',
-    chart5: 'hsl(185 30% 55%)',
+    background: 'hsl(150 35% 10%)',
+    foreground: 'hsl(120 25% 92%)',
+
+    card: 'hsl(150 30% 14%)',
+    cardForeground: 'hsl(120 25% 92%)',
+
+    popover: 'hsl(150 30% 14%)',
+    popoverForeground: 'hsl(120 25% 92%)',
+
+    primary: 'hsl(145 45% 45%)',
+    primaryForeground: 'hsl(150 35% 10%)',
+
+    secondary: 'hsl(150 25% 20%)',
+    secondaryForeground: 'hsl(120 20% 90%)',
+
+    muted: 'hsl(150 18% 18%)',
+    mutedForeground: 'hsl(140 12% 65%)',
+
+    accent: 'hsl(150 30% 22%)',
+    accentForeground: 'hsl(120 20% 90%)',
+
+    destructive: 'hsl(10 55% 55%)',
+
+    border: 'hsl(150 20% 24%)',
+    input: 'hsl(150 20% 24%)',
+    ring: 'hsl(145 45% 45%)',
+
+    radius: '1.5rem',
+
+    chart1: 'hsl(145 45% 50%)',
+    chart2: 'hsl(120 40% 55%)',
+    chart3: 'hsl(165 40% 45%)',
+    chart4: 'hsl(100 35% 55%)',
+    chart5: 'hsl(185 35% 50%)',
   },
 };
 
@@ -79,4 +99,3 @@ export const NAV_THEME: Record<'light' | 'dark', Theme> = {
     },
   },
 };
-

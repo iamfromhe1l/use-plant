@@ -4,10 +4,6 @@ import type { IApiResponse } from '../types';
 import { IAuthPayload, IAuthResponse, IRegisterPayload } from './types';
 
 export class AuthApi extends ApiClient {
-  constructor() {
-    super();
-  }
-
   async login(payload: IAuthPayload): Promise<IApiResponse<IAuthResponse>> {
     return this.post<IAuthResponse>('/auth/login', payload);
   }

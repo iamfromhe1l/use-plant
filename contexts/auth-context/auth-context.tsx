@@ -28,14 +28,14 @@ export const useAuth = () => {
   return context;
 };
 
+const authApi = new AuthApi();
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<{
     token: string | null;
     user: IUser | null;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  const authApi = new AuthApi();
 
   useEffect(() => {
     restoreSession();

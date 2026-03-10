@@ -1,0 +1,282 @@
+import React, { useState } from 'react';
+import { View, ScrollView, ActivityIndicator } from 'react-native';
+import { Stack, router } from 'expo-router';
+import * as Network from 'expo-network';
+import { useDeviceLocal } from '@/contexts/device-local-context/device-local-context';
+import { Button } from '@/components/ui/button';
+import { Text } from '@/components/ui/text';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Icon } from '@/components/ui/icon';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Wifi, Lock, Unlock, RefreshCw, ArrowLeft, Radio, X, Check, ChevronRight } from 'lucide-react-native';
+import { cn } from '@/lib/utils';
+
+export default function ConnectDeviceScreen() {
+  const { device, actions } = useDeviceLocal();
+  const [step, setStep] = useState<'find' | 'networks' | 'password'>('find');
+  const [selectedNetwork, setSelectedNetwork] = useState<{ ssid: string; encrypted: boolean } | null>(null);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const findDevice = async () => {
+    setError(null);
+
+    try {
+      const phoneIp = await Network.getIpAddressAsync();
+      const ipParts = phoneIp.split('.');
+
+      if (ipParts.length !== 4) {
+        setError('Не удалось определить IP адрес телефона');
+        return;
+      }
+
+      const baseIp = `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}`;
+      const possibleIps = ['192.168.4.1', `${baseIp}.1`, `${baseIp}.100`, `${baseIp}.101`];
+
+      for (const ip of possibleIps) {
+        const connected = await actions.connectToDevice(ip);
+        if (connected) {
+          await actions.scanNetworks();
+          setStep('networks');
+          return;
+        }
+      }
+
+      setError('Устройство не найдено. Убедитесь, что телефон подключен к Wi-Fi сети устройства');
+    } catch {
+      setError('Ошибка при поиске устройства');
+    }
+  };
+
+  const handleSelectNetwork = (network: { ssid: string; encrypted: boolean }) => {
+    setSelectedNetwork(network);
+    setStep('password');
+  };
+
+  const handleConfigure = async () => {
+    if (!selectedNetwork) return;
+
+    setError(null);
+    setSuccess(null);
+
+    const success = await actions.configureDevice(selectedNetwork.ssid, password);
+
+    if (success) {
+      setSuccess('Настройки сохранены! Устройство перезагружается и подключится к вашей Wi-Fi сети...');
+      setTimeout(() => {
+        router.push('/(app)');
+      }, 3000);
+    } else {
+      setError('Ошибка сохранения настроек');
+    }
+  };
+
+  return (
+    <>
+      <Stack.Screen
+        options={{
+          title: 'Подключение устройства',
+          headerLeft: () => (
+            <Button variant="ghost" size="sm" onPress={() => router.back()}>
+              <Icon as={ArrowLeft} size={24} />
+            </Button>
+          ),
+        }}
+      />
+      <ScrollView className="flex-1 pt-20 bg-background">
+        <View className="p-6 gap-6">
+          <View className="items-center gap-2">
+            <View className="rounded-full bg-primary/10 p-4">
+              <Icon as={Radio} size={32} className="text-primary" />
+            </View>
+            <Text className="text-2xl font-bold">Подключение устройства</Text>
+            <Text className="text-center text-muted-foreground">
+              Настройте подключение к вашей Wi-Fi сети
+            </Text>
+          </View>
+          {error && (
+            <Alert variant="destructive" icon={X}>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {success && (
+            <Alert variant="default" icon={Check}>
+              <AlertDescription>{success}</AlertDescription>
+            </Alert>
+          )}
+          {step === 'find' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Шаг 1 из 3</CardTitle>
+                <CardDescription>Поиск устройства в сети</CardDescription>
+              </CardHeader>
+              <CardContent className="gap-4">
+                <View className="bg-muted/30 rounded-lg p-4 gap-2">
+                  <Text className="font-medium">Инструкция:</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    1. Откройте настройки Wi-Fi на телефоне
+                  </Text>
+                  <Text className="text-sm text-muted-foreground">
+                    2. Подключитесь к сети устройства (PlantWatering-ESP32)
+                  </Text>
+                  <Text className="text-sm text-muted-foreground">
+                    3. Вернитесь в приложение и нажмите "Найти устройство"
+                  </Text>
+                </View>
+
+                <Button
+                  size="lg"
+                  onPress={findDevice}
+                  disabled={device.loading}
+                  className="flex-row items-center gap-2"
+                >
+                  <Icon as={Radio} size={20} className="text-background" />
+                  <Text>Найти устройство</Text>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          {step === 'networks' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Шаг 2 из 3</CardTitle>
+                <CardDescription>
+                  Найдено {device.networks.length} Wi-Fi сетей
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="gap-4">
+                <Button
+                  variant="outline"
+                  onPress={actions.scanNetworks}
+                  disabled={device.loading}
+                  className="flex-row items-center gap-2"
+                >
+                  {device.loading ? (
+                    <ActivityIndicator size="small" />
+                  ) : (
+                    <Icon as={RefreshCw} size={16} />
+                  )}
+                  <Text>Обновить список</Text>
+                </Button>
+                {device.networks.length > 0 ? (
+                  <View className="gap-2">
+                    {device.networks.map((network) => {
+                      return (
+                        <Button
+                          key={network.ssid}
+                          variant="outline"
+                          onPress={() => handleSelectNetwork(network)}
+                          className="flex-row items-center justify-between p-2 h-fit"
+                        >
+                          <View className="flex-row items-center gap-3 flex-1">
+                            <View className="w-8 h-8 rounded-full bg-muted items-center justify-center">
+                              <Icon
+                                as={network.encrypted ? Lock : Unlock}
+                                size={16}
+                                className={network.encrypted ? 'text-muted-foreground' : 'text-green-500'}
+                              />
+                            </View>
+                            <View className="flex-1">
+                              <Text className="font-medium">{network.ssid}</Text>
+                              <View className="flex-row items-center gap-1">
+                                <Icon as={Wifi} size={12} className="text-muted-foreground" />
+                                <Text className="text-xs text-muted-foreground">
+                                  {network.rssi} dBm
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                          <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
+                        </Button>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <View className="items-center py-8 gap-2">
+                    <Icon as={Wifi} size={32} className="text-muted-foreground" />
+                    <Text className="text-muted-foreground">Сети не найдены</Text>
+                  </View>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          {step === 'password' && selectedNetwork && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Шаг 3 из 3</CardTitle>
+                <CardDescription>
+                  Подключение к {selectedNetwork.ssid}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="gap-4">
+                <View className="bg-muted/30 rounded-lg p-4 items-center gap-2">
+                  <View className="w-12 h-12 rounded-full bg-primary/10 items-center justify-center">
+                    <Icon as={selectedNetwork.encrypted ? Lock : Unlock} size={24} className="text-primary" />
+                  </View>
+                  <Text className="font-medium">{selectedNetwork.ssid}</Text>
+                </View>
+                {selectedNetwork.encrypted && (
+                  <View className="relative">
+                    <Input
+                      placeholder="Пароль от Wi-Fi"
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPassword}
+                      editable={!device.loading}
+                      className="pr-20"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0"
+                      onPress={() => setShowPassword(!showPassword)}
+                    >
+                      <Text className="text-sm">{showPassword ? 'Скрыть' : 'Показать'}</Text>
+                    </Button>
+                  </View>
+                )}
+                <View className="flex-row gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onPress={() => {
+                      setSelectedNetwork(null);
+                      setStep('networks');
+                      setPassword('');
+                    }}
+                  >
+                    <Text>Назад</Text>
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onPress={handleConfigure}
+                    disabled={(selectedNetwork.encrypted && !password) || device.loading}
+                  >
+                    {device.loading ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <Text>Подключить</Text>
+                    )}
+                  </Button>
+                </View>
+              </CardContent>
+            </Card>
+          )}
+          <View className="flex-row justify-center gap-2">
+            {['find', 'networks', 'password'].map(s => (
+              <View
+                key={s}
+                className={cn("h-2 w-2 rounded-full bg-muted", {
+                  'bg-primary w-4': s === step
+                })}
+              />
+            ))}
+          </View>
+        </View>
+      </ScrollView>
+    </>
+  );
+}

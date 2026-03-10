@@ -1,4 +1,6 @@
 import { AuthProvider } from '@/contexts/auth-context/auth-context';
+import { DeviceLocalProvider } from '@/contexts/device-local-context/device-local-context';
+import { DevicesProvider } from '@/contexts/devices-context/devices-context';
 import '@/global.css';
 
 import { NAV_THEME } from '@/lib/theme';
@@ -17,15 +19,19 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider value={NAV_THEME[theme ?? 'light']}>
-        <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-        <Stack>
-          <Stack.Screen options={{ headerShown: false }} name="index" />
-          <Stack.Screen options={{ headerShown: false }} name="(auth)" />
-          <Stack.Screen options={{ headerShown: false }} name="(app)" />
-        </Stack>
-        <PortalHost />
-      </ThemeProvider>
+      <DevicesProvider>
+        <DeviceLocalProvider>
+          <ThemeProvider value={NAV_THEME[theme ?? 'light']}>
+            <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+            <Stack>
+              <Stack.Screen options={{ headerShown: false }} name="index" />
+              <Stack.Screen options={{ headerShown: false }} name="(auth)" />
+              <Stack.Screen options={{ headerShown: false }} name="(app)" />
+            </Stack>
+            <PortalHost />
+          </ThemeProvider>
+        </DeviceLocalProvider>
+      </DevicesProvider>
     </AuthProvider>
   );
 }

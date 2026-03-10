@@ -1,4 +1,3 @@
-import { IApiResponse } from '@/api/types';
 import { IUser } from '@/types/user';
 
 export interface IAuthPayload {
@@ -14,5 +13,3 @@ export interface IAuthResponse {
   token: string;
   user: IUser;
 }
-
-export type AuthResponse = IApiResponse<IAuthResponse>;

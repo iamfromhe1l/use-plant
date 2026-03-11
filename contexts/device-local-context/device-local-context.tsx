@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Esp32Api } from '@/api/devices/esp32';
 import { IEsp32Status, IEsp32Network } from '@/api/devices/types/esp32';
 import { useAuth } from '@/contexts/auth-context/auth-context';
-import { useDevices } from '../devices-context/devices-context';
+import { useDevices } from '@/contexts/devices-context/devices-context';
 
 interface IDeviceLocalContext {
   device: {

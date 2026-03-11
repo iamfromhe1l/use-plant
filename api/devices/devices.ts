@@ -1,6 +1,6 @@
 import { IDevice } from '@/types/device';
-import { ApiClient } from '../client';
-import type { IApiResponse } from '../types';
+import { ApiClient } from '@/api/client';
+import type { IApiResponse } from '@/api/types';
 
 export class DevicesApi extends ApiClient {
   async getUserDevices(): Promise<IApiResponse<IDevice[]>> {

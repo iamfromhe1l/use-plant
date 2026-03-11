@@ -1,6 +1,6 @@
 import { AxiosRequestConfig } from 'axios';
-import { ApiClient } from '../client';
-import type { IApiResponse } from '../types';
+import { ApiClient } from '@/api/client';
+import type { IApiResponse } from '@/api/types';
 import {
   IEsp32Status,
   IEsp32ScanResponse,

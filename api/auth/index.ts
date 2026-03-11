@@ -1,7 +1,7 @@
 import { AxiosRequestConfig } from 'axios';
-import { ApiClient } from '../client';
-import type { IApiResponse } from '../types';
-import { IAuthPayload, IAuthResponse, IRegisterPayload } from './types';
+import { ApiClient } from '@/api/client';
+import type { IApiResponse } from '@/api/types';
+import { IAuthPayload, IAuthResponse, IRegisterPayload } from '@/api/auth/types';
 
 export class AuthApi extends ApiClient {
   async login(payload: IAuthPayload): Promise<IApiResponse<IAuthResponse>> {

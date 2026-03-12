@@ -2,8 +2,8 @@ import { Stack } from 'expo-router';
 import * as React from 'react';
 import { Welcome } from '@/components/welcome';
 import { useDevices } from '@/contexts/devices-context/devices-context';
-import { Loading } from '@/components/loading';
 import { DevicesList } from '@/components/devices-list';
+import { DevicesListSkeleton } from '@/components/devices-list-skeleton';
 import { BottomBar } from '@/components/bottom-bar';
 import { View } from 'react-native';
 
@@ -20,7 +20,7 @@ export default function HomeScreen() {
       <Stack.Screen options={SCREEN_OPTIONS} />
       <View className='flex-1 bg-background p-6'>
         {loading
-          ? <Loading />
+          ? <DevicesListSkeleton />
           : devices.length
             ? <DevicesList />
             : <Welcome />

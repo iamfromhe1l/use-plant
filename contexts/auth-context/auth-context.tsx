@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthApi } from '@/api/auth';
+import { ApiClient } from '@/api/client';
 import { IAuthPayload, IRegisterPayload } from '@/api/auth/types';
 import { IUser } from '@/types/user';
 import { IApiResponse } from '@/api/types';
@@ -59,6 +60,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         if (response.state && response.data?.valid) {
           const user: IUser = JSON.parse(userData);
+          ApiClient.setToken(token);
           setSession({ token, user });
         } else {
           await AsyncStorage.multiRemove(['token', 'user']);
@@ -89,6 +91,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (response.state && response.data) {
       const { token, user } = response.data;
       await saveAuthData(token, user);
+      ApiClient.setToken(token);
       setSession({ token, user });
       router.replace('/');
     }
@@ -102,6 +105,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (response.state && response.data) {
       const { token, user } = response.data;
       await saveAuthData(token, user);
+      ApiClient.setToken(token);
       setSession({ token, user });
       router.replace('/');
     }
@@ -116,6 +120,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       console.error('Logout error:', error);
     } finally {
       await clearAuthData();
+      ApiClient.setToken(null);
       setSession(null);
       router.push('/sign-in');
     }

@@ -43,6 +43,7 @@ export const DevicesProvider: React.FC<{ children: ReactNode }> = ({ children })
     try {
       setLoading(true);
       const response = await backendApi.getUserDevices();
+      console.log(response)
 
       if (response.state && response.data) {
         setDevices(response.data);

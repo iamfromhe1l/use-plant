@@ -34,7 +34,7 @@ export const DevicesList = () => {
     <SafeAreaView className="flex-1 px-6">
       <View className="flex-row justify-between items-center py-2">
         <Text className="text-4xl font-extrabold text-foreground">
-          Мои растения
+          Мои устройства
         </Text>
 
         <Button size="icon" className="size-12 rounded-full" onPress={onAddDevice}>
@@ -76,6 +76,19 @@ export const DevicesList = () => {
                           : 'Нет соединения'}
                       </Text>
                     </View>
+                    {device.plants && device.plants.length > 0 && (
+                      <View className="flex-row items-center gap-2 mt-2">
+                        {device.plants.map((plant) => {
+                          const PlantIcon = getIconComponent(plant.icon);
+                          return (
+                            <View key={plant.index} className="flex-row items-center gap-1 bg-secondary rounded-full px-2.5 py-1">
+                              <Icon as={PlantIcon} size={12} className="text-secondary-foreground" />
+                              <Text className="text-xs text-secondary-foreground">{plant.name}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
                   </View>
                   <View className="absolute right-4 bottom-4">
                     <View className="bg-primary rounded-full p-3">

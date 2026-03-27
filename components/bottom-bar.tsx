@@ -31,7 +31,7 @@ export function BottomBar() {
           return (
             <Pressable
               key={index}
-              onPress={() => router.push(tab.route as any)}
+              onPress={() => router.replace(tab.route as any)}
               className={cn(
                 'items-center justify-center rounded-full',
                 index === 1 ? 'bg-primary p-4' : 'p-3'

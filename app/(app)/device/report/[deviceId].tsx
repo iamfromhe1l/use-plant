@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, ScrollView, Dimensions, TouchableOpacity, Platform } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
 import { Text } from '@/components/ui/text';
-import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Droplets, Calendar } from 'lucide-react-native';
-import { LineChart } from 'react-native-chart-kit';
+import { ScreenHeader } from '@/components/screen-header';
+import { Droplets, Calendar } from 'lucide-react-native';
+import { LineChart, BarChart } from 'react-native-chart-kit';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { TelemetryApi } from '@/api/devices/telemetry';
 import { useDevices } from '@/contexts/devices-context/devices-context';
@@ -52,10 +51,13 @@ export default function ReportScreen() {
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
 
-  const plants = device?.plants || [
-    { index: 1, name: 'Растение 1', icon: 'Leaf' },
-    { index: 2, name: 'Растение 2', icon: 'Flower2' },
-  ];
+  const plants = device?.plants || [];
+
+  useEffect(() => {
+    if (plants.length > 0 && !plants.find((p) => p.index === selectedPlant)) {
+      setSelectedPlant(plants[0].index);
+    }
+  }, [plants]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -103,9 +105,24 @@ export default function ReportScreen() {
     return { labels, datasets: [{ data: values }] };
   };
 
+  const getWateringChartData = () => {
+    const plantWatering = wateringHistory.filter((w) => w.plantIndex === selectedPlant);
+    if (plantWatering.length === 0) return null;
+
+    const recent = plantWatering.slice(0, 10).reverse();
+    const labels = recent.map((w) => {
+      const d = new Date(w.wateredAt);
+      return `${d.getDate()}.${d.getMonth() + 1}`;
+    });
+    const data = recent.map((w) => w.level);
+
+    return { labels, datasets: [{ data }] };
+  };
+
   const tempData = getChartData('temperature');
   const humidityData = getChartData('airHumidity');
   const soilData = getChartData('soilMoisture');
+  const wateringChartData = getWateringChartData();
 
   const plantWatering = wateringHistory.filter((w) => w.plantIndex === selectedPlant);
 
@@ -120,50 +137,47 @@ export default function ReportScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <View className="flex-row items-center gap-3 px-6 py-4">
-        <Button size="icon" variant="ghost" onPress={() => router.back()}>
-          <Icon as={ArrowLeft} size={24} className="text-foreground" />
-        </Button>
-        <Text className="text-xl font-bold text-foreground">Отчёты</Text>
-      </View>
+    <View className="flex-1 bg-background">
+      <ScreenHeader title="Отчёты" />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}>
         <View className="px-6 pb-8">
           {/* Plant switcher */}
-          <View className="flex-row gap-3 mb-4">
-            {plants.map((plant) => {
-              const PlantIcon = ICON_MAP[plant.icon] || Droplets;
-              const isSelected = selectedPlant === plant.index;
+          {plants.length > 0 && (
+            <View className="flex-row gap-3 mb-4">
+              {plants.map((plant) => {
+                const PlantIcon = ICON_MAP[plant.icon] || Droplets;
+                const isSelected = selectedPlant === plant.index;
 
-              return (
-                <TouchableOpacity
-                  key={plant.index}
-                  className="flex-1"
-                  onPress={() => setSelectedPlant(plant.index)}
-                >
-                  <View
-                    className={`rounded-2xl p-4 flex-row items-center gap-2 ${
-                      isSelected ? 'bg-primary' : 'bg-card'
-                    }`}
+                return (
+                  <TouchableOpacity
+                    key={plant.index}
+                    className="flex-1"
+                    onPress={() => setSelectedPlant(plant.index)}
                   >
-                    <Icon
-                      as={PlantIcon}
-                      size={20}
-                      className={isSelected ? 'text-primary-foreground' : 'text-foreground'}
-                    />
-                    <Text
-                      className={`text-sm font-medium ${
-                        isSelected ? 'text-primary-foreground' : 'text-foreground'
+                    <View
+                      className={`rounded-2xl p-4 flex-row items-center gap-2 ${
+                        isSelected ? 'bg-primary' : 'bg-card'
                       }`}
                     >
-                      {plant.name}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                      <Icon
+                        as={PlantIcon}
+                        size={20}
+                        className={isSelected ? 'text-primary-foreground' : 'text-foreground'}
+                      />
+                      <Text
+                        className={`text-sm font-medium ${
+                          isSelected ? 'text-primary-foreground' : 'text-foreground'
+                        }`}
+                      >
+                        {plant.name}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
           {/* Date picker */}
           <View className="flex-row gap-3 mb-6">
@@ -264,42 +278,66 @@ export default function ReportScreen() {
             </>
           )}
 
-          {/* Watering history */}
+          {/* Watering history chart */}
           <Text className="text-lg font-bold text-foreground mt-4 mb-3">История поливов</Text>
           {loading ? (
             <View className="gap-2">
+              <ChartBlockSkeleton />
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-12 rounded-xl" />
               ))}
             </View>
-          ) : plantWatering.length === 0 ? (
+          ) : wateringChartData ? (
+            <>
+              <View className="mb-4">
+                <View className="rounded-2xl overflow-hidden">
+                  <BarChart
+                    data={wateringChartData}
+                    width={screenWidth}
+                    height={180}
+                    yAxisLabel=""
+                    yAxisSuffix=""
+                    chartConfig={{
+                      backgroundGradientFrom: '#e0f2fe',
+                      backgroundGradientTo: '#e0f2fe',
+                      color: (opacity = 1) => `rgba(14, 165, 233, ${opacity})`,
+                      labelColor: () => '#5f6b5e',
+                      decimalPlaces: 0,
+                      barPercentage: 0.6,
+                    }}
+                    style={{ borderRadius: 16 }}
+                  />
+                </View>
+              </View>
+
+              <View className="gap-2">
+                {plantWatering.map((record, i) => (
+                  <View key={i} className="bg-card rounded-xl p-3 flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2">
+                      <Icon as={Droplets} size={14} className="text-primary" />
+                      <Text className="text-sm text-foreground">Уровень {record.level}</Text>
+                    </View>
+                    <View className="flex-row gap-1">
+                      {Array.from({ length: 10 }, (_, j) => (
+                        <View
+                          key={j}
+                          className={`w-2 h-2 rounded-full ${j < record.level ? 'bg-primary' : 'bg-muted'}`}
+                        />
+                      ))}
+                    </View>
+                    <Text className="text-xs text-muted-foreground">{formatDateTime(record.wateredAt)}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          ) : (
             <View className="bg-card rounded-2xl p-4 items-center">
               <Text className="text-sm text-muted-foreground">Нет записей</Text>
-            </View>
-          ) : (
-            <View className="gap-2">
-              {plantWatering.map((record, i) => (
-                <View key={i} className="bg-card rounded-xl p-3 flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-2">
-                    <Icon as={Droplets} size={14} className="text-primary" />
-                    <Text className="text-sm text-foreground">Уровень {record.level}</Text>
-                  </View>
-                  <View className="flex-row gap-1">
-                    {Array.from({ length: 10 }, (_, j) => (
-                      <View
-                        key={j}
-                        className={`w-2 h-2 rounded-full ${j < record.level ? 'bg-primary' : 'bg-muted'}`}
-                      />
-                    ))}
-                  </View>
-                  <Text className="text-xs text-muted-foreground">{formatDateTime(record.wateredAt)}</Text>
-                </View>
-              ))}
             </View>
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react-native';
 import { useDevices } from '@/contexts/devices-context/devices-context';
 import { ICON_MAP } from '@/consts/icons';
+import { isDeviceOnline } from '@/lib/device-status';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export const DevicesList = () => {
@@ -65,13 +66,13 @@ export const DevicesList = () => {
                       {device.name}
                     </Text>
                     <View className="flex-row items-center gap-2">
-                      {device.status === 'active' ? (
+                      {isDeviceOnline(device.lastSeen) ? (
                         <Icon as={Wifi} size={16} className="text-primary" />
                       ) : (
                         <Icon as={WifiOff} size={16} className="text-destructive" />
                       )}
                       <Text className="text-sm text-muted-foreground">
-                        {device.status === 'active'
+                        {isDeviceOnline(device.lastSeen)
                           ? 'Подключено'
                           : 'Нет соединения'}
                       </Text>

@@ -6,6 +6,7 @@ export default function DeviceLayout() {
       <Stack.Screen name="[deviceId]" />
       <Stack.Screen name="report/[deviceId]" />
       <Stack.Screen name="settings/[deviceId]" />
+      <Stack.Screen name="conditions/[deviceId]" />
     </Stack>
   );
 }

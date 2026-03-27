@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
-  Alert,
   ScrollView,
   TouchableOpacity,
   Dimensions,
@@ -14,24 +13,28 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import {
   ArrowLeft,
   Droplets,
   Thermometer,
   Wind,
   Flower2,
-  Minus,
-  Plus,
   BarChart3,
   Settings,
   ChevronLeft,
   ChevronRight,
   Clock,
+  ListChecks,
+  AlertCircle,
 } from 'lucide-react-native';
 import { CommandsApi } from '@/api/devices/commands';
 import { TelemetryApi } from '@/api/devices/telemetry';
 import { useDevices } from '@/contexts/devices-context/devices-context';
 import { ICON_MAP } from '@/consts/icons';
+import { WaterLevelBar } from '@/components/water-level-bar';
 import type { CommandType } from '@/api/devices/types/commands';
 import type { ITelemetryRecord, IWateringRecord } from '@/api/devices/types/telemetry';
 import type { IPlant } from '@/types/device';
@@ -48,6 +51,7 @@ export default function DeviceScreen() {
   const sliderRef = useRef<FlatList>(null);
   const scrollRef = useRef<ScrollView>(null);
 
+  const plants: IPlant[] = device?.plants || [];
   const [selectedPlantIndex, setSelectedPlantIndex] = useState(0);
   const [telemetry, setTelemetry] = useState<ITelemetryRecord | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -55,15 +59,12 @@ export default function DeviceScreen() {
   const [sendingCommand, setSendingCommand] = useState<CommandType | null>(null);
   const [waterLevels, setWaterLevels] = useState<Record<number, number>>({ 1: 5, 2: 5 });
   const [loading, setLoading] = useState(true);
-
-  const plants: IPlant[] = device?.plants || [
-    { index: 1, name: 'Растение 1', icon: 'Leaf' },
-    { index: 2, name: 'Растение 2', icon: 'Flower2' },
-  ];
+  const [error, setError] = useState<string | null>(null);
 
   const currentPlant = plants[selectedPlantIndex];
 
   const fetchData = useCallback(async () => {
+    setError(null);
     const [telRes, waterRes] = await Promise.all([
       telemetryApi.getLatestTelemetry(deviceId),
       telemetryApi.getWateringHistory(deviceId),
@@ -88,31 +89,24 @@ export default function DeviceScreen() {
   };
 
   const handleWater = async () => {
+    if (!currentPlant) return;
     const plantIndex = currentPlant.index;
-    const commandType = plantIndex === 1 ? 'water_plant_1' : 'water_plant_2';
+    const cmdType = plantIndex === 1 ? 'water_plant_1' : 'water_plant_2';
     const level = waterLevels[plantIndex] || 5;
 
-    setSendingCommand(commandType as CommandType);
+    setSendingCommand(cmdType as CommandType);
+    setError(null);
     const response = await commandsApi.sendCommand(deviceId, {
-      type: commandType as CommandType,
+      type: cmdType as CommandType,
       payload: { level },
     });
     setSendingCommand(null);
 
     if (response.state) {
-      Alert.alert('Успешно', `Полив запущен (уровень ${level})`);
       fetchData();
     } else {
-      Alert.alert('Ошибка', response.error?.message || 'Не удалось отправить команду');
+      setError(response.error?.message || 'Не удалось отправить команду');
     }
-  };
-
-  const setLevel = (delta: number) => {
-    const plantIndex = currentPlant.index;
-    setWaterLevels((prev) => ({
-      ...prev,
-      [plantIndex]: Math.min(10, Math.max(1, (prev[plantIndex] || 5) + delta)),
-    }));
   };
 
   const getPlantTelemetry = (plantIndex: number) => {
@@ -149,20 +143,59 @@ export default function DeviceScreen() {
   };
 
   const level = waterLevels[currentPlant?.index] || 5;
-  const plantTelemetry = getPlantTelemetry(currentPlant?.index);
-  const lastWatering = getLastWatering(currentPlant?.index);
+  const plantTelemetry = currentPlant ? getPlantTelemetry(currentPlant.index) : undefined;
+  const lastWatering = currentPlant ? getLastWatering(currentPlant.index) : undefined;
   const commandType = currentPlant?.index === 1 ? 'water_plant_1' : 'water_plant_2';
   const isSending = sendingCommand === commandType;
 
+  if (plants.length === 0) {
+    return (
+      <View className="flex-1 bg-background">
+        <View className="bg-card px-6 pb-4 rounded-b-3xl z-10" style={{ paddingTop: insets.top }}>
+          <View className="flex-row items-center justify-between">
+            <Button size="icon" variant="ghost" onPress={() => router.back()}>
+              <Icon as={ArrowLeft} size={24} className="text-card-foreground" />
+            </Button>
+            <Text className="text-lg font-bold text-card-foreground">
+              {device?.name || 'Устройство'}
+            </Text>
+            <View style={{ width: 40 }} />
+          </View>
+        </View>
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-muted-foreground">Нет растений</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-background">
-      <ScrollView
-        ref={scrollRef}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Hero slider */}
+      {/* Merged header + plant hero */}
+      <View className="bg-card rounded-b-3xl z-10" style={{ paddingTop: insets.top }}>
+        {/* Top bar */}
+        <View className="flex-row items-center justify-between px-6">
+          <Button size="icon" variant="ghost" onPress={() => router.back()}>
+            <Icon as={ArrowLeft} size={24} className="text-card-foreground" />
+          </Button>
+          <Text className="text-lg font-bold text-card-foreground">
+            {device?.name || 'Устройство'}
+          </Text>
+          <View className="flex-row gap-2">
+            <TouchableOpacity onPress={() => router.push(`/(app)/device/report/${deviceId}`)}>
+              <View className="bg-primary rounded-full p-2">
+                <Icon as={BarChart3} size={18} className="text-primary-foreground" />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push(`/(app)/device/settings/${deviceId}`)}>
+              <View className="bg-primary rounded-full p-2">
+                <Icon as={Settings} size={18} className="text-primary-foreground" />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Plant hero slider */}
         <FlatList
           ref={sliderRef}
           data={plants}
@@ -176,40 +209,16 @@ export default function DeviceScreen() {
           style={{ flexGrow: 0 }}
           renderItem={({ item: plant }) => {
             const PlantIcon = ICON_MAP[plant.icon] || Flower2;
-            const pt = getPlantTelemetry(plant.index);
             const lw = getLastWatering(plant.index);
 
             return (
               <View style={{ width: SCREEN_WIDTH }}>
-                <View className="bg-card rounded-b-[40px] pb-8 px-6" style={{ paddingTop: insets.top }}>
-                  {/* Header */}
-                  <View className="flex-row items-center justify-between mb-4">
-                    <Button size="icon" variant="ghost" onPress={() => router.back()}>
-                      <Icon as={ArrowLeft} size={24} className="text-card-foreground" />
-                    </Button>
-                    <Text className="text-lg font-bold text-card-foreground">
-                      {device?.name || 'Устройство'}
-                    </Text>
-                    <View className="flex-row gap-2">
-                      <TouchableOpacity onPress={() => router.push(`/(app)/device/report/${deviceId}`)}>
-                        <View className="bg-primary rounded-full p-2">
-                          <Icon as={BarChart3} size={18} className="text-primary-foreground" />
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => router.push(`/(app)/device/settings/${deviceId}`)}>
-                        <View className="bg-primary rounded-full p-2">
-                          <Icon as={Settings} size={18} className="text-primary-foreground" />
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* Plant icon & name */}
-                  <View className="items-center mb-5">
+                <View className="pb-2 px-6 pt-4">
+                  <View className="items-center">
                     <View className="bg-primary/10 rounded-full p-7 mb-3">
                       <Icon as={PlantIcon} size={72} className="text-primary" />
                     </View>
-                    <Text className="text-2xl font-bold text-card-foreground">{plant.name}</Text>
+                    <Text className="text-2xl font-bold text-foreground">{plant.name}</Text>
                     {loading ? (
                       <Skeleton className="h-4 w-32 mt-2 rounded-full" />
                     ) : lw ? (
@@ -227,21 +236,9 @@ export default function DeviceScreen() {
           }}
         />
 
-        {/* Dots */}
-        <View className="flex-row justify-center gap-2 py-4">
-          {plants.map((_, i) => (
-            <TouchableOpacity key={i} onPress={() => switchPlant(i - selectedPlantIndex)}>
-              <View
-                className={`h-2 rounded-full ${i === selectedPlantIndex ? 'bg-primary w-6' : 'bg-muted w-2'
-                  }`}
-              />
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View className="px-6">
-          {/* Navigation arrows + plant name */}
-          <View className="flex-row items-center justify-between mb-5">
+        {/* Plant navigation arrows + dots inside header */}
+        {plants.length > 1 && (
+          <View className="flex-row items-center justify-between px-6 pb-4">
             <TouchableOpacity
               onPress={() => switchPlant(-1)}
               disabled={selectedPlantIndex === 0}
@@ -249,7 +246,15 @@ export default function DeviceScreen() {
             >
               <Icon as={ChevronLeft} size={28} className="text-foreground" />
             </TouchableOpacity>
-            <Text className="text-xl font-bold text-foreground">{currentPlant.name}</Text>
+            <View className="flex-row gap-2">
+              {plants.map((_, i) => (
+                <TouchableOpacity key={i} onPress={() => switchPlant(i - selectedPlantIndex)}>
+                  <View
+                    className={`h-2 rounded-full ${i === selectedPlantIndex ? 'bg-primary w-6' : 'bg-muted w-2'}`}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
             <TouchableOpacity
               onPress={() => switchPlant(1)}
               disabled={selectedPlantIndex === plants.length - 1}
@@ -258,8 +263,27 @@ export default function DeviceScreen() {
               <Icon as={ChevronRight} size={28} className="text-foreground" />
             </TouchableOpacity>
           </View>
+        )}
 
-          {/* Sensor detail cards - larger separate blocks */}
+        {plants.length <= 1 && <View className="pb-4" />}
+      </View>
+
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        <View className="px-6 pt-4">
+          {/* Error alert */}
+          {error && (
+            <Alert icon={AlertCircle} variant="destructive" className="mb-4">
+              <AlertTitle>Ошибка</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Sensor detail cards */}
           {loading ? (
             <View className="gap-5 mb-6">
               <SensorCardSkeleton />
@@ -295,34 +319,43 @@ export default function DeviceScreen() {
             </View>
           )}
 
+          <Separator className="mb-5" />
+
+          {/* Conditions button */}
+          <TouchableOpacity
+            onPress={() => router.push(`/(app)/device/conditions/${deviceId}`)}
+          >
+            <View className="bg-card rounded-3xl p-5 mb-5 flex-row items-center justify-between">
+              <View className="flex-row items-center gap-3">
+                <View className="bg-primary/10 rounded-2xl p-3">
+                  <Icon as={ListChecks} size={22} className="text-primary" />
+                </View>
+                <View>
+                  <Text className="text-base font-semibold text-foreground">Условия полива</Text>
+                  <Text className="text-xs text-muted-foreground">Автоматический полив</Text>
+                </View>
+              </View>
+              <Badge variant="secondary">
+                <Text className="text-xs text-secondary-foreground">Настроить</Text>
+              </Badge>
+            </View>
+          </TouchableOpacity>
+
           {/* Water level */}
           <View className="bg-card rounded-3xl p-5 mb-4">
             <Text className="text-base font-semibold text-foreground mb-3">
               Уровень полива: {level}
             </Text>
-            <View className="flex-row items-center gap-2 mb-4">
-              <TouchableOpacity onPress={() => setLevel(-1)}>
-                <View className="bg-secondary rounded-full p-2">
-                  <Icon as={Minus} size={16} className="text-secondary-foreground" />
-                </View>
-              </TouchableOpacity>
-              <View className="flex-1 flex-row gap-1">
-                {Array.from({ length: 10 }, (_, i) => (
-                  <View
-                    key={i}
-                    className={`flex-1 h-3 rounded-full ${i < level ? 'bg-primary' : 'bg-muted'}`}
-                  />
-                ))}
-              </View>
-              <TouchableOpacity onPress={() => setLevel(1)}>
-                <View className="bg-secondary rounded-full p-2">
-                  <Icon as={Plus} size={16} className="text-secondary-foreground" />
-                </View>
-              </TouchableOpacity>
-            </View>
+            <WaterLevelBar
+              value={level}
+              onChange={(val) => {
+                if (!currentPlant) return;
+                setWaterLevels((prev) => ({ ...prev, [currentPlant.index]: val }));
+              }}
+            />
 
             <Button
-              className="flex-row items-center justify-center gap-2"
+              className="flex-row items-center justify-center gap-2 mt-4"
               onPress={handleWater}
               disabled={sendingCommand !== null}
             >
@@ -334,36 +367,6 @@ export default function DeviceScreen() {
           </View>
         </View>
       </ScrollView>
-    </View>
-  );
-}
-
-function MiniStat({
-  icon,
-  value,
-  label,
-}: {
-  icon: React.ComponentType<any>;
-  value: string;
-  label: string;
-}) {
-  return (
-    <View className="items-center gap-1 flex-1">
-      <View className="bg-primary/15 rounded-full p-2.5">
-        <Icon as={icon} size={18} className="text-primary" />
-      </View>
-      <Text className="text-sm font-bold text-card-foreground">{value}</Text>
-      <Text className="text-xs text-muted-foreground">{label}</Text>
-    </View>
-  );
-}
-
-function MiniStatSkeleton() {
-  return (
-    <View className="items-center gap-1 flex-1">
-      <Skeleton className="w-10 h-10 rounded-full" />
-      <Skeleton className="w-10 h-4 rounded-full" />
-      <Skeleton className="w-12 h-3 rounded-full" />
     </View>
   );
 }

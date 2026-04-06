@@ -1,34 +1,34 @@
 import { View, Pressable } from 'react-native'
-import { router, usePathname } from 'expo-router'
+import { Href, router, usePathname } from 'expo-router'
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
-  interpolate,
 } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Text } from '@/components/ui/text'
 import { Icon } from '@/components/ui/icon'
 import { Leaf, Settings, User } from 'lucide-react-native'
 import * as Haptics from 'expo-haptics'
+import type { LucideIcon } from 'lucide-react-native'
 
 const TABS = [
-  { icon: Settings, label: 'Настройки', route: '/(app)/settings' },
-  { icon: Leaf,     label: 'Главная',   route: '/',               isCenter: true },
-  { icon: User,     label: 'Профиль',   route: '/profile' },
+  { icon: Settings, label: 'Настройки', href: '/(app)/settings' as Href, matchPath: '/settings' },
+  { icon: Leaf, label: 'Главная', href: '/(app)' as Href, matchPath: '/', isCenter: true },
+  { icon: User, label: 'Профиль', href: '/(app)/profile' as Href, matchPath: '/profile' },
 ]
 
 function TabItem({
   icon,
   label,
-  route,
+  href,
   isCenter,
   active,
 }: {
-  icon: React.ComponentType<any>
+  icon: LucideIcon
   label: string
-  route: string
+  href: Href
   isCenter?: boolean
   active: boolean
 }) {
@@ -44,12 +44,16 @@ function TabItem({
   }))
 
   const handlePress = () => {
+    if (active) {
+      return
+    }
+
     scale.value = withSpring(0.82, { damping: 15 }, () => {
       scale.value = withSpring(1, { damping: 15 })
     })
     dotOpacity.value = withTiming(1, { duration: 150 })
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    router.push(route as any)
+    router.replace(href)
   }
 
   if (isCenter) {
@@ -92,10 +96,11 @@ export function BottomBar() {
   const pathname = usePathname()
   const insets = useSafeAreaInsets()
 
-  const isActive = (route: string) => {
-    if (route === '/') return pathname === '/'
-    if (route === '/(app)/settings') return pathname.includes('settings') && !pathname.includes('device')
-    return pathname === route || pathname.startsWith(route)
+  const normalizedPathname =
+    pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+
+  const isActive = (matchPath: string) => {
+    return normalizedPathname === matchPath
   }
 
   return (
@@ -115,12 +120,12 @@ export function BottomBar() {
       <View className="flex-row items-end px-4" style={{ height: 72 }}>
         {TABS.map((tab) => (
           <TabItem
-            key={tab.route}
+            key={tab.matchPath}
             icon={tab.icon}
             label={tab.label}
-            route={tab.route}
+            href={tab.href}
             isCenter={!!tab.isCenter}
-            active={isActive(tab.route)}
+            active={isActive(tab.matchPath)}
           />
         ))}
       </View>

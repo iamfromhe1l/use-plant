@@ -22,17 +22,19 @@ export function ScreenHeader({ title, subtitle, rightContent, showBack = true }:
       style={{ paddingTop: insets.top + 4 }}
     >
       <View className="flex-row items-center justify-between">
-        {showBack ? (
-          <TouchableOpacity
-            onPress={() => router.back()}
-            className="bg-background/70 rounded-2xl p-2.5"
-            activeOpacity={0.7}
-          >
-            <Icon as={ArrowLeft} size={20} className="text-foreground" />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
+        <View className="w-11 items-start">
+          {showBack ? (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              className="bg-background/70 rounded-2xl p-2.5"
+              activeOpacity={0.7}
+            >
+              <Icon as={ArrowLeft} size={20} className="text-foreground" />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 40, height: 40 }} />
+          )}
+        </View>
 
         <View className="flex-1 items-center mx-3">
           <Text className="text-lg font-bold text-foreground" numberOfLines={1}>
@@ -43,7 +45,9 @@ export function ScreenHeader({ title, subtitle, rightContent, showBack = true }:
           )}
         </View>
 
-        {rightContent || <View style={{ width: 40 }} />}
+        <View className="w-11 items-end">
+          {rightContent || <View style={{ width: 40, height: 40 }} />}
+        </View>
       </View>
     </View>
   );

@@ -28,7 +28,7 @@ function AlertDialogOverlay({
     <FullWindowOverlay>
       <AlertDialogPrimitive.Overlay
         className={cn(
-          'absolute bottom-0 left-0 right-0 top-0 z-50 flex items-center justify-center bg-black/50 p-2',
+          'absolute bottom-0 left-0 right-0 top-0 z-50 flex items-center justify-center bg-black/50 p-4',
           Platform.select({
             web: 'animate-in fade-in-0 fixed',
           }),
@@ -36,6 +36,7 @@ function AlertDialogOverlay({
         )}
         {...props}>
         <NativeOnlyAnimatedView
+          className="w-full"
           entering={FadeIn.duration(200).delay(50)}
           exiting={FadeOut.duration(150)}>
           <>{children}</>
@@ -58,9 +59,9 @@ function AlertDialogContent({
       <AlertDialogOverlay>
         <AlertDialogPrimitive.Content
           className={cn(
-            'bg-background border-border z-50 flex flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
+            'bg-background border-border z-50 flex w-full self-stretch max-w-none flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5',
             Platform.select({
-              web: 'animate-in fade-in-0 zoom-in-95 web:max-w-[calc(100%-2rem)] duration-200',
+              web: 'animate-in fade-in-0 zoom-in-95 duration-200',
             }),
             className
           )}

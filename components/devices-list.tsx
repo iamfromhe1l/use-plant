@@ -4,11 +4,10 @@ import { router } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Wifi, WifiOff, Plus, Leaf, ArrowUpRight, Sprout, Clock } from 'lucide-react-native';
+import { Leaf, ArrowUpRight, Sprout, Clock } from 'lucide-react-native';
 import { useDevices } from '@/contexts/devices-context/devices-context';
 import { ICON_MAP } from '@/consts/icons';
 import { isDeviceOnline } from '@/lib/device-status';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -33,30 +32,7 @@ export const DevicesList = () => {
     router.push(`/(app)/device/${deviceId}`);
   };
 
-  const onAddDevice = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/(app)/connect');
-  };
-
-  const onlineCount = devices.filter((d) => isDeviceOnline(d.lastSeen)).length;
-
   return (
-    <SafeAreaView className="flex-1">
-      {/* Header */}
-      <View className="flex-row justify-between items-center pt-2 pb-5">
-        <View>
-          <Text className="text-3xl font-extrabold text-foreground">Мои растения</Text>
-          <Text className="text-sm text-muted-foreground mt-1">
-            {onlineCount > 0 ? `${onlineCount} устройств в сети` : 'Нет активных устройств'}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={onAddDevice} activeOpacity={0.85}>
-          <View className="bg-primary rounded-2xl p-3">
-            <Icon as={Plus} size={22} className="text-primary-foreground" />
-          </View>
-        </TouchableOpacity>
-      </View>
-
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         <View className="gap-5">
           {devices.map((device, index) => {
@@ -156,6 +132,5 @@ export const DevicesList = () => {
           })}
         </View>
       </ScrollView>
-    </SafeAreaView>
   );
 };

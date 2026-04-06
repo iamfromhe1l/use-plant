@@ -30,7 +30,7 @@ function DialogOverlay({
     <FullWindowOverlay>
       <DialogPrimitive.Overlay
         className={cn(
-          'absolute bottom-0 left-0 right-0 top-0 z-50 flex items-center justify-center bg-black/50 p-2',
+          'absolute bottom-0 left-0 right-0 top-0 z-50 flex items-center justify-center bg-black/50 p-4',
           Platform.select({
             web: 'animate-in fade-in-0 fixed cursor-default [&>*]:cursor-auto',
           }),
@@ -38,8 +38,14 @@ function DialogOverlay({
         )}
         {...props}
         asChild={Platform.OS !== 'web'}>
-        <NativeOnlyAnimatedView entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
-          <NativeOnlyAnimatedView entering={FadeIn.delay(50)} exiting={FadeOut.duration(150)}>
+        <NativeOnlyAnimatedView
+          className="w-full"
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(150)}>
+          <NativeOnlyAnimatedView
+            className="w-full"
+            entering={FadeIn.delay(50)}
+            exiting={FadeOut.duration(150)}>
             <>{children}</>
           </NativeOnlyAnimatedView>
         </NativeOnlyAnimatedView>
@@ -61,9 +67,9 @@ function DialogContent({
       <DialogOverlay>
         <DialogPrimitive.Content
           className={cn(
-            'bg-background border-border z-50 mx-auto flex w-full flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
+            'bg-background border-border z-50 mx-auto flex w-full self-stretch max-w-none flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5',
             Platform.select({
-              web: 'animate-in fade-in-0 zoom-in-95 web:max-w-[calc(100%-2rem)] duration-200',
+              web: 'animate-in fade-in-0 zoom-in-95 duration-200',
             }),
             className
           )}

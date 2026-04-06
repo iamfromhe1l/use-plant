@@ -2,12 +2,12 @@ import { Stack } from 'expo-router';
 
 export default function AppLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="device" />
-      <Stack.Screen name="profile" />
-      <Stack.Screen name="connect" />
-      <Stack.Screen name="settings" />
+    <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+      <Stack.Screen name="index" options={{ animation: 'fade' }} />
+      <Stack.Screen name="device" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="profile" options={{ animation: 'fade' }} />
+      <Stack.Screen name="connect" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="settings" options={{ animation: 'fade' }} />
     </Stack>
   );
 }

@@ -1,6 +1,7 @@
 import { AuthProvider } from '@/contexts/auth-context/auth-context';
 import { DeviceLocalProvider } from '@/contexts/device-local-context/device-local-context';
 import { DevicesProvider } from '@/contexts/devices-context/devices-context';
+import { Toaster } from '@/components/ui/toast';
 import '@/global.css';
 
 import { NAV_THEME } from '@/lib/theme';
@@ -28,6 +29,7 @@ export default function RootLayout() {
               <Stack.Screen options={{ headerShown: false }} name="(auth)" />
               <Stack.Screen options={{ headerShown: false }} name="(app)" />
             </Stack>
+            <Toaster />
             <PortalHost />
           </ThemeProvider>
         </DeviceLocalProvider>

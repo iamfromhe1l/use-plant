@@ -1,15 +1,15 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   TouchableOpacity,
-  Dimensions,
   RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   FadeInDown,
-  FadeIn,
   useSharedValue,
   useAnimatedStyle,
   useAnimatedScrollHandler,
@@ -31,9 +31,9 @@ import {
   ChevronRight,
   Clock,
   ListChecks,
-  AlertCircle,
   Zap,
   CheckCircle2,
+  type LucideIcon,
 } from 'lucide-react-native';
 import { CommandsApi } from '@/api/devices/commands';
 import { TelemetryApi } from '@/api/devices/telemetry';
@@ -41,19 +41,25 @@ import { useDevices } from '@/contexts/devices-context/devices-context';
 import { isDeviceOnline } from '@/lib/device-status';
 import { ICON_MAP } from '@/consts/icons';
 import { WaterLevelBar } from '@/components/water-level-bar';
+import { toast } from '@/components/ui/toast';
 import type { CommandType } from '@/api/devices/types/commands';
+import type { IWateringCondition } from '@/api/devices/types/conditions';
 import type { ITelemetryRecord, IWateringRecord } from '@/api/devices/types/telemetry';
 import type { IPlant } from '@/types/device';
+import {
+  describeWateringCondition,
+  getWateringConditionsStorageKey,
+} from '@/lib/watering-conditions';
 import * as Haptics from 'expo-haptics';
 
 const commandsApi = new CommandsApi();
 const telemetryApi = new TelemetryApi();
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Header animation constants
-const HERO_HEIGHT = 200;      // expanded plant hero height
-const TOP_BAR_H   = 64;       // fixed top bar height
-const COLLAPSE_AT  = 110;     // scroll distance to fully collapse
+const TOP_BAR_H = 64;
+const PLANT_BLOCK_EXPANDED_HEIGHT = 116;
+const PLANT_BLOCK_COLLAPSED_HEIGHT = 74;
+const HEADER_BOTTOM_PADDING = 8;
+const COLLAPSE_AT = 180;
 
 export default function DeviceScreen() {
   const { deviceId } = useLocalSearchParams<{ deviceId: string }>();
@@ -66,11 +72,10 @@ export default function DeviceScreen() {
   const [telemetry, setTelemetry]       = useState<ITelemetryRecord | null>(null);
   const [refreshing, setRefreshing]     = useState(false);
   const [wateringHistory, setWateringHistory] = useState<IWateringRecord[]>([]);
+  const [conditions, setConditions] = useState<IWateringCondition[]>([]);
   const [sendingCommand, setSendingCommand] = useState<CommandType | null>(null);
   const [waterLevels, setWaterLevels]   = useState<Record<number, number>>({});
   const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState<string | null>(null);
-  const [waterSuccess, setWaterSuccess] = useState(false);
 
   const scrollY = useSharedValue(0);
 
@@ -83,7 +88,6 @@ export default function DeviceScreen() {
   }, [plants.length]);
 
   const fetchData = useCallback(async () => {
-    setError(null);
     const [telRes, waterRes] = await Promise.all([
       telemetryApi.getLatestTelemetry(deviceId),
       telemetryApi.getWateringHistory(deviceId),
@@ -95,6 +99,35 @@ export default function DeviceScreen() {
   useEffect(() => {
     fetchData().then(() => setLoading(false));
   }, [fetchData]);
+
+  const loadConditions = useCallback(async () => {
+    try {
+      const storedConditions = await AsyncStorage.getItem(getWateringConditionsStorageKey(deviceId));
+      const parsedConditions = storedConditions ? JSON.parse(storedConditions) : [];
+      setConditions(Array.isArray(parsedConditions) ? parsedConditions : []);
+    } catch {
+      setConditions([]);
+    }
+  }, [deviceId]);
+
+  useEffect(() => {
+    void loadConditions();
+  }, [loadConditions]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchData();
+      void loadConditions();
+
+      const intervalId = setInterval(() => {
+        void fetchData();
+      }, 15000);
+
+      return () => {
+        clearInterval(intervalId);
+      };
+    }, [fetchData, loadConditions])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -109,20 +142,17 @@ export default function DeviceScreen() {
     const level = waterLevels[plantIndex] || 5;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSendingCommand(cmdType as CommandType);
-    setError(null);
-    setWaterSuccess(false);
     const response = await commandsApi.sendCommand(deviceId, {
       type: cmdType as CommandType,
       payload: { level },
     });
     setSendingCommand(null);
     if (response.state) {
-      setWaterSuccess(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.success(`Команда полива для ${currentPlant.name} отправлена`);
       fetchData();
-      setTimeout(() => setWaterSuccess(false), 3000);
     } else {
-      setError(response.error?.message || 'Не удалось отправить команду');
+      toast.error(response.error?.message || 'Не удалось отправить команду');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
@@ -160,6 +190,15 @@ export default function DeviceScreen() {
   const isSending    = sendingCommand === commandType;
   const isOnline     = device ? isDeviceOnline(device.lastSeen) : false;
   const PlantIcon    = currentPlant ? (ICON_MAP[currentPlant.icon] || Flower2) : Flower2;
+  const plantConditions = currentPlant
+    ? conditions.filter((condition) => condition.plantIndex === currentPlant.index)
+    : [];
+  const enabledPlantConditions = plantConditions.filter((condition) => condition.enabled);
+  const expandedHeaderHeight =
+    insets.top + TOP_BAR_H + PLANT_BLOCK_EXPANDED_HEIGHT + HEADER_BOTTOM_PADDING;
+  const collapsedHeaderHeight =
+    insets.top + TOP_BAR_H + PLANT_BLOCK_COLLAPSED_HEIGHT + HEADER_BOTTOM_PADDING;
+  const headerSubtitle = `${currentPlant?.name || 'Растение'} • ${isOnline ? 'В сети' : 'Не в сети'}`;
 
   // ─── Animated scroll handler ───────────────────────────────────────
   const scrollHandler = useAnimatedScrollHandler({
@@ -168,30 +207,36 @@ export default function DeviceScreen() {
     },
   });
 
-  // Hero (icon + name) fades out and shrinks
-  const heroStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.7], [1, 0], Extrapolation.CLAMP),
-    transform: [{
-      translateY: interpolate(scrollY.value, [0, COLLAPSE_AT], [0, -20], Extrapolation.CLAMP),
-    }],
-  }));
-
-  // Header card total height
   const headerCardStyle = useAnimatedStyle(() => ({
     height: interpolate(
       scrollY.value,
       [0, COLLAPSE_AT],
-      [insets.top + TOP_BAR_H + HERO_HEIGHT + (plants.length > 1 ? 48 : 16), insets.top + TOP_BAR_H],
+      [expandedHeaderHeight, collapsedHeaderHeight],
       Extrapolation.CLAMP,
     ),
   }));
 
-  // Collapsed mini-row (icon right, name left) fades IN
-  const collapsedStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [COLLAPSE_AT * 0.5, COLLAPSE_AT], [0, 1], Extrapolation.CLAMP),
-    transform: [{
-      translateY: interpolate(scrollY.value, [COLLAPSE_AT * 0.5, COLLAPSE_AT], [8, 0], Extrapolation.CLAMP),
-    }],
+  const plantBlockStyle = useAnimatedStyle(() => ({
+    height: interpolate(
+      scrollY.value,
+      [0, COLLAPSE_AT],
+      [PLANT_BLOCK_EXPANDED_HEIGHT, PLANT_BLOCK_COLLAPSED_HEIGHT],
+      Extrapolation.CLAMP,
+    ),
+  }));
+
+  const plantBlockContentStyle = useAnimatedStyle(() => {
+    const progress = interpolate(scrollY.value, [0, COLLAPSE_AT], [0, 1], Extrapolation.CLAMP);
+
+    return {
+      transform: [{ scale: 1 - progress * 0.08 }],
+    };
+  });
+
+  const iconWrapStyle = useAnimatedStyle(() => ({
+    width: interpolate(scrollY.value, [0, COLLAPSE_AT], [76, 52], Extrapolation.CLAMP),
+    height: interpolate(scrollY.value, [0, COLLAPSE_AT], [76, 52], Extrapolation.CLAMP),
+    borderRadius: interpolate(scrollY.value, [0, COLLAPSE_AT], [30, 22], Extrapolation.CLAMP),
   }));
 
   if (plants.length === 0) {
@@ -222,56 +267,29 @@ export default function DeviceScreen() {
       >
         {/* Top bar — always visible */}
         <View
-          className="flex-row items-center px-5"
+          className="flex-row items-center px-6"
           style={{ paddingTop: insets.top + 8, height: insets.top + TOP_BAR_H }}
         >
-          <TouchableOpacity
-            onPress={() => router.back()}
-            className="bg-background/70 rounded-2xl p-2.5 mr-3"
-            activeOpacity={0.7}
-          >
-            <Icon as={ArrowLeft} size={20} className="text-foreground" />
-          </TouchableOpacity>
-
-          {/* Device name + status — always visible */}
-          <View className="flex-1">
-            <Text className="text-base font-bold text-foreground" numberOfLines={1}>
-              {device?.name || 'Устройство'}
-            </Text>
-            <View className="flex-row items-center gap-1">
-              <View className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />
-              <Text className="text-xs text-muted-foreground">
-                {isOnline ? 'В сети' : 'Не в сети'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Collapsed: plant name left + mini icon right */}
-          <Animated.View
-            style={[collapsedStyle, { position: 'absolute', left: 110, right: 110, alignItems: 'flex-start' }]}
-            pointerEvents="none"
-          >
-            <Text className="text-sm font-semibold text-primary" numberOfLines={1}>
-              {currentPlant?.name}
-            </Text>
-          </Animated.View>
-
-          {/* Collapsed mini plant icon */}
-          <Animated.View style={collapsedStyle} className="mr-2">
-            <View className="bg-primary/10 rounded-xl p-2">
-              <Icon as={PlantIcon} size={18} className="text-primary" />
-            </View>
-          </Animated.View>
-
-          {/* Action buttons */}
-          <View className="flex-row gap-2">
+          <View className="w-11 items-start">
             <TouchableOpacity
-              onPress={() => router.push(`/(app)/device/report/${deviceId}`)}
-              className="bg-primary/10 rounded-2xl p-2.5"
+              onPress={() => router.back()}
+              className="bg-background/70 rounded-2xl p-2.5"
               activeOpacity={0.7}
             >
-              <Icon as={BarChart3} size={18} className="text-primary" />
+              <Icon as={ArrowLeft} size={20} className="text-foreground" />
             </TouchableOpacity>
+          </View>
+
+          <View className="flex-1 items-center mx-3">
+            <Text className="text-lg font-bold text-foreground" numberOfLines={1}>
+              {device?.name || 'Устройство'}
+            </Text>
+            <Text className="text-xs text-muted-foreground mt-0.5" numberOfLines={1}>
+              {headerSubtitle}
+            </Text>
+          </View>
+
+          <View className="w-11 items-end">
             <TouchableOpacity
               onPress={() => router.push(`/(app)/device/settings/${deviceId}`)}
               className="bg-primary/10 rounded-2xl p-2.5"
@@ -282,46 +300,82 @@ export default function DeviceScreen() {
           </View>
         </View>
 
-        {/* ─── Expanded hero: plant icon + name ───────────────────── */}
-        <Animated.View style={heroStyle} className="items-center px-6 pt-2 pb-2">
-          <View className="bg-primary/10 rounded-full p-6 mb-3">
-            <Icon as={PlantIcon} size={68} className="text-primary" />
-          </View>
-          <Text className="text-2xl font-bold text-foreground">{currentPlant?.name}</Text>
-          {loading ? (
-            <Skeleton className="h-4 w-32 mt-2 rounded-full" />
-          ) : lastWatering ? (
-            <View className="flex-row items-center gap-1.5 mt-1.5 bg-background/60 rounded-full px-3 py-1">
-              <Icon as={Clock} size={11} className="text-muted-foreground" />
-              <Text className="text-xs text-muted-foreground">
-                Полит: {formatDate(lastWatering.wateredAt)}
-              </Text>
-            </View>
-          ) : (
-            <Text className="text-xs text-muted-foreground mt-1.5">Поливов не было</Text>
-          )}
-        </Animated.View>
+        <View className="pb-3">
+          <Animated.View
+            style={plantBlockStyle}
+            className="overflow-hidden"
+          >
+            <Animated.View
+              style={plantBlockContentStyle}
+              className="flex-1 flex-row items-center px-5"
+            >
+              <View className="w-10 items-start">
+                {plants.length > 1 ? (
+                  <TouchableOpacity
+                    onPress={() => switchPlant(-1)}
+                    disabled={selectedPlantIndex === 0}
+                    className="bg-card rounded-2xl p-2.5"
+                    style={{ opacity: selectedPlantIndex === 0 ? 0.35 : 1 }}
+                    activeOpacity={0.75}
+                  >
+                    <Icon as={ChevronLeft} size={18} className="text-foreground" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
 
-        {/* Plant switcher */}
-        {plants.length > 1 && (
-          <Animated.View style={heroStyle} className="flex-row items-center justify-between px-6 pb-3">
-            <TouchableOpacity onPress={() => switchPlant(-1)} disabled={selectedPlantIndex === 0}
-              style={{ opacity: selectedPlantIndex === 0 ? 0.3 : 1 }}>
-              <Icon as={ChevronLeft} size={24} className="text-foreground" />
-            </TouchableOpacity>
-            <View className="flex-row gap-2">
-              {plants.map((_, i) => (
-                <TouchableOpacity key={i} onPress={() => setSelectedPlantIndex(i)}>
-                  <View className={`h-2 rounded-full ${i === selectedPlantIndex ? 'bg-primary w-6' : 'bg-muted w-2'}`} />
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity onPress={() => switchPlant(1)} disabled={selectedPlantIndex === plants.length - 1}
-              style={{ opacity: selectedPlantIndex === plants.length - 1 ? 0.3 : 1 }}>
-              <Icon as={ChevronRight} size={24} className="text-foreground" />
-            </TouchableOpacity>
+              <View className="flex-1 flex-row items-center gap-3">
+                <Animated.View
+                  style={iconWrapStyle}
+                  className="bg-primary/10 items-center justify-center"
+                >
+                  <Icon as={PlantIcon} size={30} className="text-primary" />
+                </Animated.View>
+
+                <View className="flex-1">
+                  <Text className="text-base font-bold text-foreground" numberOfLines={2}>
+                    {currentPlant?.name}
+                  </Text>
+                  <Text className="text-[11px] text-muted-foreground mt-1" numberOfLines={2}>
+                    {lastWatering
+                      ? `Последний полив: ${formatDate(lastWatering.wateredAt)}`
+                      : 'Поливов пока не было'}
+                  </Text>
+                </View>
+
+                <View className="items-end gap-2">
+                  <View className="bg-card rounded-full px-3 py-1.5">
+                    <Text
+                      className={`text-[10px] font-semibold ${
+                        isOnline ? 'text-emerald-600' : 'text-muted-foreground'
+                      }`}
+                    >
+                      {isOnline ? 'В сети' : 'Не в сети'}
+                    </Text>
+                  </View>
+                  <View className="bg-card rounded-full px-3 py-1.5">
+                    <Text className="text-[10px] font-semibold text-primary">
+                      {enabledPlantConditions.length} усл.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View className="w-10 items-end">
+                {plants.length > 1 ? (
+                  <TouchableOpacity
+                    onPress={() => switchPlant(1)}
+                    disabled={selectedPlantIndex === plants.length - 1}
+                    className="bg-card rounded-2xl p-2.5"
+                    style={{ opacity: selectedPlantIndex === plants.length - 1 ? 0.35 : 1 }}
+                    activeOpacity={0.75}
+                  >
+                    <Icon as={ChevronRight} size={18} className="text-foreground" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </Animated.View>
           </Animated.View>
-        )}
+        </View>
       </Animated.View>
 
       {/* ─── Scrollable content ──────────────────────────────────────── */}
@@ -330,31 +384,15 @@ export default function DeviceScreen() {
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          paddingTop: insets.top + TOP_BAR_H + HERO_HEIGHT + (plants.length > 1 ? 48 : 16) + 16,
+          paddingTop: expandedHeaderHeight + 16,
           paddingBottom: 120,
         }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#16a34a"
-            progressViewOffset={insets.top + TOP_BAR_H + HERO_HEIGHT} />
+            progressViewOffset={expandedHeaderHeight} />
         }
       >
         <View className="px-5 gap-4">
-          {/* Error */}
-          {error && (
-            <Animated.View entering={FadeIn} className="bg-destructive/10 rounded-2xl p-4 flex-row items-center gap-3">
-              <Icon as={AlertCircle} size={18} className="text-destructive" />
-              <Text className="text-sm text-destructive flex-1">{error}</Text>
-            </Animated.View>
-          )}
-
-          {/* Success */}
-          {waterSuccess && (
-            <Animated.View entering={FadeIn} className="bg-emerald-500/10 rounded-2xl p-4 flex-row items-center gap-3">
-              <Icon as={CheckCircle2} size={18} className="text-emerald-600" />
-              <Text className="text-sm text-emerald-700 flex-1">Команда полива отправлена!</Text>
-            </Animated.View>
-          )}
-
           {/* Sensor cards */}
           {loading ? (
             <Animated.View entering={FadeInDown.delay(50)} className="flex-row gap-3">
@@ -370,10 +408,16 @@ export default function DeviceScreen() {
             </Animated.View>
           )}
 
+          <View className="h-px bg-border/70 mx-1" />
+
           {/* Quick actions */}
           <Animated.View entering={FadeInDown.delay(120).springify()} className="flex-row gap-3">
             <TouchableOpacity className="flex-1" activeOpacity={0.8}
-              onPress={() => router.push(`/(app)/device/conditions/${deviceId}`)}>
+              onPress={() =>
+                router.push(
+                  `/(app)/device/conditions/${deviceId}?plantIndex=${currentPlant?.index ?? 1}`
+                )
+              }>
               <View className="bg-card rounded-3xl p-4 flex-row items-center gap-3">
                 <View className="bg-primary/10 rounded-2xl p-2.5">
                   <Icon as={ListChecks} size={20} className="text-primary" />
@@ -385,18 +429,48 @@ export default function DeviceScreen() {
               </View>
             </TouchableOpacity>
             <TouchableOpacity className="flex-1" activeOpacity={0.8}
-              onPress={() => router.push(`/(app)/device/report/${deviceId}`)}>
+              onPress={() =>
+                router.push(
+                  `/(app)/device/report/${deviceId}?plantIndex=${currentPlant?.index ?? 1}`
+                )
+              }>
               <View className="bg-card rounded-3xl p-4 flex-row items-center gap-3">
                 <View className="bg-primary/10 rounded-2xl p-2.5">
                   <Icon as={BarChart3} size={20} className="text-primary" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-sm font-semibold text-foreground">Отчёты</Text>
-                  <Text className="text-xs text-muted-foreground">История</Text>
+                  <Text className="text-sm font-semibold text-foreground">Графики</Text>
+                  <Text className="text-xs text-muted-foreground">Датчики</Text>
                 </View>
               </View>
             </TouchableOpacity>
           </Animated.View>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() =>
+              router.push(
+                `/(app)/device/watering-report/${deviceId}?plantIndex=${currentPlant?.index ?? 1}`
+              )
+            }
+          >
+            <Animated.View entering={FadeInDown.delay(150).springify()}>
+              <View className="bg-card rounded-3xl p-4 flex-row items-center gap-3">
+                <View className="bg-primary/10 rounded-2xl p-2.5">
+                  <Icon as={Droplets} size={20} className="text-primary" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-sm font-semibold text-foreground">Отчёты поливов</Text>
+                  <Text className="text-xs text-muted-foreground">История и интенсивность</Text>
+                </View>
+                <View className="bg-primary/10 rounded-full px-2.5 py-1">
+                  <Text className="text-xs font-semibold text-primary">{plantConditions.length}</Text>
+                </View>
+              </View>
+            </Animated.View>
+          </TouchableOpacity>
+
+          <View className="h-px bg-border/70 mx-1" />
 
           {/* Water section */}
           <Animated.View entering={FadeInDown.delay(200).springify()} className="bg-card rounded-3xl p-5">
@@ -447,6 +521,71 @@ export default function DeviceScreen() {
               </View>
             </Animated.View>
           )}
+
+          <View className="h-px bg-border/70 mx-1" />
+
+          <Animated.View entering={FadeInDown.delay(340).springify()} className="bg-card rounded-3xl p-5">
+            <View className="flex-row items-center gap-2 mb-4">
+              <Icon as={ListChecks} size={18} className="text-primary" />
+              <Text className="text-base font-semibold text-foreground">Условия полива</Text>
+              <View className="flex-1" />
+              <View className="bg-primary/10 rounded-full px-2.5 py-1">
+                <Text className="text-xs font-semibold text-primary">
+                  {enabledPlantConditions.length} активн.
+                </Text>
+              </View>
+            </View>
+
+            {plantConditions.length === 0 ? (
+              <Text className="text-sm text-muted-foreground">
+                Для этого растения условия пока не настроены.
+              </Text>
+            ) : (
+              <View className="gap-3">
+                {plantConditions.slice(0, 3).map((condition) => (
+                  <View
+                    key={condition.id}
+                    className="bg-secondary/30 rounded-2xl px-4 py-3 flex-row items-start gap-3"
+                  >
+                    <View
+                      className={`rounded-2xl p-2.5 ${
+                        condition.type === 'sensor' ? 'bg-sky-500/12' : 'bg-violet-500/12'
+                      }`}
+                    >
+                      <Icon
+                        as={condition.type === 'sensor' ? Droplets : Clock}
+                        size={16}
+                        className={condition.type === 'sensor' ? 'text-sky-600' : 'text-violet-600'}
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-sm font-semibold text-foreground">
+                          {condition.type === 'sensor' ? 'По датчикам' : 'По расписанию'}
+                        </Text>
+                        {!condition.enabled ? (
+                          <View className="bg-muted rounded-full px-2 py-0.5">
+                            <Text className="text-[11px] font-medium text-muted-foreground">
+                              Выкл.
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text className="text-xs text-muted-foreground mt-1">
+                        {describeWateringCondition(condition)}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+
+                {plantConditions.length > 3 ? (
+                  <Text className="text-xs text-muted-foreground">
+                    И ещё {plantConditions.length - 3} условий
+                  </Text>
+                ) : null}
+              </View>
+            )}
+          </Animated.View>
         </View>
       </Animated.ScrollView>
     </View>
@@ -454,7 +593,7 @@ export default function DeviceScreen() {
 }
 
 function MiniSensorCard({ icon, label, value, unit, bg, color }: {
-  icon: React.ComponentType<any>;
+  icon: LucideIcon;
   label: string;
   value?: number;
   unit: string;

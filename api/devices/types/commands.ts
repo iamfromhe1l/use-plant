@@ -1,6 +1,7 @@
 export const COMMAND_TYPES = {
   WATER_PLANT_1: "water_plant_1",
   WATER_PLANT_2: "water_plant_2",
+  SET_CONDITIONS: "set_conditions",
   DEVICE_RESET: "device_reset",
 } as const;
 

@@ -16,9 +16,10 @@ export class TelemetryApi extends ApiClient {
     return this.get<ITelemetryRecord[]>('/telemetry/history', { params });
   }
 
-  async getWateringHistory(deviceId: string): Promise<IApiResponse<IWateringRecord[]>> {
-    return this.get<IWateringRecord[]>('/telemetry/watering', {
-      params: { deviceId },
-    });
+  async getWateringHistory(deviceId: string, limit = 100, from?: string, to?: string): Promise<IApiResponse<IWateringRecord[]>> {
+    const params: Record<string, unknown> = { deviceId, limit };
+    if (from) params.from = from;
+    if (to) params.to = to;
+    return this.get<IWateringRecord[]>('/telemetry/watering', { params });
   }
 }

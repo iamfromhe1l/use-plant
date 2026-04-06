@@ -1,96 +1,335 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, ScrollView, Dimensions, TouchableOpacity, Platform, Modal } from 'react-native';
+import { View, ScrollView, Dimensions, TouchableOpacity, Platform } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import { BarChart, LineChart } from 'react-native-chart-kit';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import {
+  BarChart3,
+  Calendar,
+  ChevronDown,
+  Droplets,
+  Thermometer,
+  Wind,
+  type LucideIcon,
+} from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { ScreenHeader } from '@/components/screen-header';
-import { Droplets, Calendar, Thermometer, Wind, ChevronDown } from 'lucide-react-native';
-import { LineChart } from 'react-native-chart-kit';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { TelemetryApi } from '@/api/devices/telemetry';
 import { useDevices } from '@/contexts/devices-context/devices-context';
-import { ICON_MAP } from '@/consts/icons';
-import type { ITelemetryRecord, IWateringRecord } from '@/api/devices/types/telemetry';
+import type { ITelemetryRecord } from '@/api/devices/types/telemetry';
 
 const telemetryApi = new TelemetryApi();
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CHART_WIDTH = SCREEN_WIDTH - 48;
+const CHART_CANVAS_COLOR = '#eef6f0';
+const CHART_CANVAS_COLOR_ALT = '#f6faf7';
+const CHART_LABEL_COLOR = '#4b6353';
+
+type MetricKey = 'temperature' | 'airHumidity' | 'soilMoisture';
+
+type MetricPoint = {
+  date: string;
+  label: string;
+  value: number;
+};
+
+type ChartDataset = {
+  data: number[];
+  color?: (opacity: number) => string;
+  strokeWidth?: number;
+  withDots?: boolean;
+};
+
+type BasicChartData = {
+  labels: string[];
+  datasets: ChartDataset[];
+  legend?: string[];
+};
 
 const CHART_CONFIGS = {
   temperature: {
-    bg: '#fff7ed',
-    color: (o = 1) => `rgba(234, 88, 12, ${o})`,
+    title: 'Температура',
+    icon: Thermometer,
+    unit: '°C',
+    iconColor: 'text-orange-600',
+    color: (opacity = 1) => `rgba(234, 88, 12, ${opacity})`,
     label: () => '#c2410c',
   },
   airHumidity: {
-    bg: '#f0f9ff',
-    color: (o = 1) => `rgba(2, 132, 199, ${o})`,
+    title: 'Влажность воздуха',
+    icon: Wind,
+    unit: '%',
+    iconColor: 'text-sky-600',
+    color: (opacity = 1) => `rgba(2, 132, 199, ${opacity})`,
     label: () => '#0369a1',
   },
   soilMoisture: {
-    bg: '#f0fdf4',
-    color: (o = 1) => `rgba(22, 163, 74, ${o})`,
+    title: 'Влажность почвы',
+    icon: Droplets,
+    unit: '%',
+    iconColor: 'text-emerald-600',
+    color: (opacity = 1) => `rgba(22, 163, 74, ${opacity})`,
     label: () => '#15803d',
   },
-};
+} satisfies Record<
+  MetricKey,
+  {
+    title: string;
+    icon: LucideIcon;
+    unit: string;
+    iconColor: string;
+    color: (opacity?: number) => string;
+    label: () => string;
+  }
+>;
 
 function getDefaultFrom() {
-  const d = new Date();
-  d.setDate(d.getDate() - 7);
-  return d;
+  const date = new Date();
+  date.setDate(date.getDate() - 7);
+  return date;
+}
+
+function toStartOfDay(date: Date) {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function toEndOfDay(date: Date) {
+  const value = new Date(date);
+  value.setHours(23, 59, 59, 999);
+  return value;
 }
 
 function formatDateShort(date: Date) {
-  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  });
 }
 
-function formatTime(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+function formatDateTime(dateStr: string) {
+  return new Date(dateStr).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
-function formatDateGroup(dateStr: string) {
-  const d = new Date(dateStr);
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
+function formatChartLabel(dateStr: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
 
-  if (d.toDateString() === today.toDateString()) return 'Сегодня';
-  if (d.toDateString() === yesterday.toDateString()) return 'Вчера';
-  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' });
+  return sameDay
+    ? date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 }
 
-// Group watering records by day
-function groupByDay(records: IWateringRecord[]) {
-  const sorted = [...records].sort(
-    (a, b) => new Date(b.wateredAt).getTime() - new Date(a.wateredAt).getTime()
-  );
-  const groups: { label: string; items: IWateringRecord[] }[] = [];
-  let lastLabel = '';
+function formatDayLabel(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
 
-  for (const record of sorted) {
-    const label = formatDateGroup(record.wateredAt);
-    if (label !== lastLabel) {
-      groups.push({ label, items: [record] });
-      lastLabel = label;
-    } else {
-      groups[groups.length - 1].items.push(record);
+function formatSignedValue(value: number, digits: number) {
+  const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+  return `${prefix}${Math.abs(value).toFixed(digits)}`;
+}
+
+function formatTrendLabel(value: number | null, unit: string, digits: number) {
+  if (value === null) return 'Тренд —';
+  return `Тренд ${formatSignedValue(value, digits)}${unit}`;
+}
+
+function getMetricPoints(history: ITelemetryRecord[], plantIndex: number, key: MetricKey) {
+  return history
+    .map((record) => {
+      const plant = record.plants.find((item) => item.index === plantIndex);
+      if (!plant) return null;
+
+      return {
+        date: record.receivedAt,
+        label: formatChartLabel(record.receivedAt),
+        value: plant[key],
+      };
+    })
+    .filter((point): point is MetricPoint => point !== null);
+}
+
+function buildChartData(points: MetricPoint[], maxPoints = 12): BasicChartData | null {
+  const sliced = points.slice(-maxPoints);
+
+  if (sliced.length === 0) return null;
+
+  const labelStep = sliced.length > 6 ? Math.ceil(sliced.length / 4) : 1;
+
+  return {
+    labels: sliced.map((point, index) => (index % labelStep === 0 ? point.label : '')),
+    datasets: [{ data: sliced.map((point) => point.value) }],
+  };
+}
+
+function buildDailyAverageData(points: MetricPoint[]): BasicChartData | null {
+  const grouped = new Map<string, { sum: number; count: number; label: string }>();
+
+  points.forEach((point) => {
+    const dayKey = point.date.slice(0, 10);
+    const existing = grouped.get(dayKey);
+
+    if (existing) {
+      existing.sum += point.value;
+      existing.count += 1;
+      return;
     }
-  }
-  return groups;
+
+    grouped.set(dayKey, {
+      sum: point.value,
+      count: 1,
+      label: formatDayLabel(point.date),
+    });
+  });
+
+  const dailyPoints = Array.from(grouped.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, value]) => ({
+      label: value.label,
+      value: Number((value.sum / value.count).toFixed(1)),
+    }));
+
+  if (dailyPoints.length === 0) return null;
+
+  return {
+    labels: dailyPoints.map((point) => point.label),
+    datasets: [{ data: dailyPoints.map((point) => point.value) }],
+  };
+}
+
+function buildDailyRangeData(
+  points: MetricPoint[],
+  color: (opacity?: number) => string
+): BasicChartData | null {
+  const grouped = new Map<string, { min: number; max: number; label: string }>();
+
+  points.forEach((point) => {
+    const dayKey = point.date.slice(0, 10);
+    const existing = grouped.get(dayKey);
+
+    if (existing) {
+      existing.min = Math.min(existing.min, point.value);
+      existing.max = Math.max(existing.max, point.value);
+      return;
+    }
+
+    grouped.set(dayKey, {
+      min: point.value,
+      max: point.value,
+      label: formatDayLabel(point.date),
+    });
+  });
+
+  const dailyPoints = Array.from(grouped.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, value]) => value);
+
+  if (dailyPoints.length === 0) return null;
+
+  return {
+    labels: dailyPoints.map((point) => point.label),
+    datasets: [
+      {
+        data: dailyPoints.map((point) => Number(point.min.toFixed(1))),
+        color: (opacity) => color(Math.max(0.25, opacity)),
+        strokeWidth: 2,
+      },
+      {
+        data: dailyPoints.map((point) => Number(point.max.toFixed(1))),
+        color: (opacity) => color(Math.max(0.9, opacity)),
+        strokeWidth: 2,
+      },
+    ],
+    legend: ['Минимум', 'Максимум'],
+  };
+}
+
+function buildDailySpreadData(points: MetricPoint[]): BasicChartData | null {
+  const grouped = new Map<string, { min: number; max: number; label: string }>();
+
+  points.forEach((point) => {
+    const dayKey = point.date.slice(0, 10);
+    const existing = grouped.get(dayKey);
+
+    if (existing) {
+      existing.min = Math.min(existing.min, point.value);
+      existing.max = Math.max(existing.max, point.value);
+      return;
+    }
+
+    grouped.set(dayKey, {
+      min: point.value,
+      max: point.value,
+      label: formatDayLabel(point.date),
+    });
+  });
+
+  const dailyPoints = Array.from(grouped.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, value]) => ({
+      label: value.label,
+      value: Number((value.max - value.min).toFixed(1)),
+    }));
+
+  if (dailyPoints.length === 0) return null;
+
+  return {
+    labels: dailyPoints.map((point) => point.label),
+    datasets: [{ data: dailyPoints.map((point) => point.value) }],
+  };
+}
+
+function getMetricStats(points: MetricPoint[]) {
+  if (points.length === 0) return null;
+
+  const values = points.map((point) => point.value);
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  return {
+    average,
+    min,
+    max,
+  };
+}
+
+function getMetricTrend(points: MetricPoint[]) {
+  if (points.length < 2) return null;
+  return Number((points[points.length - 1].value - points[0].value).toFixed(1));
 }
 
 export default function ReportScreen() {
-  const { deviceId } = useLocalSearchParams<{ deviceId: string }>();
+  const { deviceId, plantIndex: plantIndexParam } = useLocalSearchParams<{
+    deviceId: string;
+    plantIndex?: string;
+  }>();
   const { devices } = useDevices();
-  const device = devices.find((d) => d.deviceId === deviceId);
-
-  const [selectedPlant, setSelectedPlant] = useState(1);
+  const device = devices.find((item) => item.deviceId === deviceId);
   const [history, setHistory] = useState<ITelemetryRecord[]>([]);
-  const [wateringHistory, setWateringHistory] = useState<IWateringRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [dateFrom, setDateFrom] = useState(getDefaultFrom);
@@ -104,132 +343,138 @@ export default function ReportScreen() {
     { index: 1, name: 'Растение 1', icon: 'Leaf' },
     { index: 2, name: 'Растение 2', icon: 'Flower2' },
   ];
+  const selectedPlant = Number(plantIndexParam || plants[0]?.index || 1);
+  const selectedPlantInfo =
+    plants.find((plant) => plant.index === selectedPlant) || plants[0] || null;
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const from = dateFrom.toISOString();
-    const to = dateTo.toISOString();
-    const [telRes, waterRes] = await Promise.all([
-      telemetryApi.getTelemetryHistory(deviceId, 200, from, to),
-      telemetryApi.getWateringHistory(deviceId),
-    ]);
-    if (telRes.state && telRes.data) setHistory(telRes.data.reverse());
-    if (waterRes.state && waterRes.data) setWateringHistory(waterRes.data);
+    const from = toStartOfDay(dateFrom).toISOString();
+    const to = toEndOfDay(dateTo).toISOString();
+    const response = await telemetryApi.getTelemetryHistory(deviceId, 240, from, to);
+
+    if (response.state && response.data) {
+      setHistory(response.data.reverse());
+    } else {
+      setHistory([]);
+    }
+
     setLoading(false);
   }, [deviceId, dateFrom, dateTo]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
-  // Date picker handlers
-  const openFromPicker = () => { setTempFromDate(dateFrom); setShowFromPicker(true); };
-  const openToPicker = () => { setTempToDate(dateTo); setShowToPicker(true); };
-  const onFromChange = (_: any, selected?: Date) => {
-    if (Platform.OS === 'android') { setShowFromPicker(false); if (selected) setDateFrom(selected); }
-    else { if (selected) setTempFromDate(selected); }
-  };
-  const onToChange = (_: any, selected?: Date) => {
-    if (Platform.OS === 'android') { setShowToPicker(false); if (selected) setDateTo(selected); }
-    else { if (selected) setTempToDate(selected); }
-  };
-  const confirmFromDate = () => { if (tempFromDate) setDateFrom(tempFromDate); setShowFromPicker(false); setTempFromDate(null); };
-  const confirmToDate = () => { if (tempToDate) setDateTo(tempToDate); setShowToPicker(false); setTempToDate(null); };
-  const cancelFromDate = () => { setShowFromPicker(false); setTempFromDate(null); };
-  const cancelToDate = () => { setShowToPicker(false); setTempToDate(null); };
-
-  const getChartData = (key: 'temperature' | 'airHumidity' | 'soilMoisture') => {
-    const values = history
-      .map((r) => {
-        const plant = r.plants.find((p) => p.index === selectedPlant);
-        return plant ? plant[key] : 0;
-      })
-      .slice(-20);
-    if (values.length === 0) return null;
-    return { labels: values.map((_, i) => (i % 5 === 0 ? String(i) : '')), datasets: [{ data: values }] };
+  const openFromPicker = () => {
+    setTempFromDate(dateFrom);
+    setShowFromPicker(true);
   };
 
-  // Latest sensor readings from telemetry
-  const latestRecord = history[history.length - 1];
-  const latestPlant = latestRecord?.plants.find((p) => p.index === selectedPlant);
+  const openToPicker = () => {
+    setTempToDate(dateTo);
+    setShowToPicker(true);
+  };
 
-  const plantWatering = wateringHistory.filter((w) => w.plantIndex === selectedPlant);
-  const wateringGroups = groupByDay(plantWatering);
+  const onFromChange = (_: unknown, selected?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowFromPicker(false);
+      if (selected) setDateFrom(selected);
+      return;
+    }
 
-  const tempData = getChartData('temperature');
-  const humidityData = getChartData('airHumidity');
-  const soilData = getChartData('soilMoisture');
+    if (selected) setTempFromDate(selected);
+  };
+
+  const onToChange = (_: unknown, selected?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowToPicker(false);
+      if (selected) setDateTo(selected);
+      return;
+    }
+
+    if (selected) setTempToDate(selected);
+  };
+
+  const confirmFromDate = () => {
+    if (tempFromDate) setDateFrom(tempFromDate);
+    setShowFromPicker(false);
+    setTempFromDate(null);
+  };
+
+  const confirmToDate = () => {
+    if (tempToDate) setDateTo(tempToDate);
+    setShowToPicker(false);
+    setTempToDate(null);
+  };
+
+  const cancelFromDate = () => {
+    setShowFromPicker(false);
+    setTempFromDate(null);
+  };
+
+  const cancelToDate = () => {
+    setShowToPicker(false);
+    setTempToDate(null);
+  };
+
+  const temperaturePoints = getMetricPoints(history, selectedPlant, 'temperature');
+  const airHumidityPoints = getMetricPoints(history, selectedPlant, 'airHumidity');
+  const soilMoisturePoints = getMetricPoints(history, selectedPlant, 'soilMoisture');
+
+  const rawCharts = {
+    temperature: buildChartData(temperaturePoints),
+    airHumidity: buildChartData(airHumidityPoints),
+    soilMoisture: buildChartData(soilMoisturePoints),
+  };
+
+  const dailyAverageCharts = {
+    temperature: buildDailyAverageData(temperaturePoints),
+    airHumidity: buildDailyAverageData(airHumidityPoints),
+    soilMoisture: buildDailyAverageData(soilMoisturePoints),
+  };
+
+  const dailyRangeCharts = {
+    temperature: buildDailyRangeData(temperaturePoints, CHART_CONFIGS.temperature.color),
+    airHumidity: buildDailyRangeData(airHumidityPoints, CHART_CONFIGS.airHumidity.color),
+    soilMoisture: buildDailyRangeData(soilMoisturePoints, CHART_CONFIGS.soilMoisture.color),
+  };
+
+  const dailySpreadCharts = {
+    temperature: buildDailySpreadData(temperaturePoints),
+    airHumidity: buildDailySpreadData(airHumidityPoints),
+    soilMoisture: buildDailySpreadData(soilMoisturePoints),
+  };
+
+  const metricStats = {
+    temperature: getMetricStats(temperaturePoints),
+    airHumidity: getMetricStats(airHumidityPoints),
+    soilMoisture: getMetricStats(soilMoisturePoints),
+  };
+
+  const metricTrends = {
+    temperature: getMetricTrend(temperaturePoints),
+    airHumidity: getMetricTrend(airHumidityPoints),
+    soilMoisture: getMetricTrend(soilMoisturePoints),
+  };
+
+  const dayCount = new Set(history.map((item) => item.receivedAt.slice(0, 10))).size;
+  const lastRecordedAt = history[history.length - 1]?.receivedAt;
 
   return (
     <View className="flex-1 bg-background">
-      <ScreenHeader title="Отчёты" subtitle={device?.name} />
+      <ScreenHeader
+        title="Графики"
+        subtitle={
+          selectedPlantInfo
+            ? `${device?.name || 'Устройство'} • ${selectedPlantInfo.name}`
+            : device?.name
+        }
+      />
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
         <View className="px-6 pt-4">
-
-          {/* Plant tabs */}
-          <Animated.View entering={FadeInDown.delay(50).springify()} className="flex-row gap-2 mb-4">
-            {plants.map((plant) => {
-              const PlantIcon = ICON_MAP[plant.icon] || Droplets;
-              const isSelected = selectedPlant === plant.index;
-              return (
-                <TouchableOpacity
-                  key={plant.index}
-                  className="flex-1"
-                  onPress={() => setSelectedPlant(plant.index)}
-                  activeOpacity={0.8}
-                >
-                  <View className={`rounded-2xl p-3.5 flex-row items-center justify-center gap-2 ${isSelected ? 'bg-primary' : 'bg-card'}`}>
-                    <Icon
-                      as={PlantIcon}
-                      size={16}
-                      className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}
-                    />
-                    <Text className={`text-sm font-semibold ${isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}`}>
-                      {plant.name}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </Animated.View>
-
-          {/* Summary cards */}
-          {loading ? (
-            <View className="flex-row gap-3 mb-4">
-              <Skeleton className="flex-1 h-24 rounded-3xl" />
-              <Skeleton className="flex-1 h-24 rounded-3xl" />
-              <Skeleton className="flex-1 h-24 rounded-3xl" />
-            </View>
-          ) : latestPlant ? (
-            <Animated.View entering={FadeInDown.delay(100).springify()} className="flex-row gap-3 mb-4">
-              <SummaryCard
-                icon={Thermometer}
-                label="Темп."
-                value={`${latestPlant.temperature.toFixed(0)}°`}
-                bg="bg-orange-500/10"
-                textColor="text-orange-600"
-              />
-              <SummaryCard
-                icon={Wind}
-                label="Влажн."
-                value={`${latestPlant.airHumidity.toFixed(0)}%`}
-                bg="bg-sky-500/10"
-                textColor="text-sky-600"
-              />
-              <SummaryCard
-                icon={Droplets}
-                label="Почва"
-                value={`${latestPlant.soilMoisture.toFixed(0)}%`}
-                bg="bg-emerald-500/10"
-                textColor="text-emerald-600"
-              />
-            </Animated.View>
-          ) : null}
-
-          {/* Date range selector */}
-          <Animated.View entering={FadeInDown.delay(150).springify()} className="flex-row gap-3 mb-5">
+          <Animated.View entering={FadeInDown.delay(80).springify()} className="flex-row gap-3 mb-5">
             <TouchableOpacity className="flex-1" onPress={openFromPicker} activeOpacity={0.8}>
               <View className="bg-card rounded-2xl p-3.5 flex-row items-center gap-2">
                 <Icon as={Calendar} size={15} className="text-primary" />
@@ -252,17 +497,30 @@ export default function ReportScreen() {
             </TouchableOpacity>
           </Animated.View>
 
-          {/* Android date pickers */}
-          {Platform.OS === 'android' && showFromPicker && (
-            <DateTimePicker value={dateFrom} mode="date" display="default" maximumDate={dateTo} onChange={onFromChange} />
-          )}
-          {Platform.OS === 'android' && showToPicker && (
-            <DateTimePicker value={dateTo} mode="date" display="default" minimumDate={dateFrom} maximumDate={new Date()} onChange={onToChange} />
-          )}
+          {Platform.OS === 'android' && showFromPicker ? (
+            <DateTimePicker
+              value={dateFrom}
+              mode="date"
+              display="default"
+              maximumDate={dateTo}
+              onChange={onFromChange}
+            />
+          ) : null}
+          {Platform.OS === 'android' && showToPicker ? (
+            <DateTimePicker
+              value={dateTo}
+              mode="date"
+              display="default"
+              minimumDate={dateFrom}
+              maximumDate={new Date()}
+              onChange={onToChange}
+            />
+          ) : null}
 
-          {/* Charts */}
           {loading ? (
             <View className="gap-4">
+              <HighlightsSkeleton />
+              <SummarySkeleton />
               <ChartSkeleton />
               <ChartSkeleton />
               <ChartSkeleton />
@@ -274,220 +532,458 @@ export default function ReportScreen() {
               </Text>
             </Animated.View>
           ) : (
-            <View className="gap-4 mb-5">
-              {tempData && (
-                <Animated.View entering={FadeInDown.delay(200).springify()}>
-                  <ChartCard
+            <>
+              <Animated.View entering={FadeInDown.delay(120).springify()} className="mb-5">
+                <View className="flex-row items-center gap-2 mb-3">
+                  <Icon as={Calendar} size={18} className="text-primary" />
+                  <Text className="text-xl font-bold text-foreground">Период наблюдения</Text>
+                </View>
+                <View className="gap-3">
+                  <CompactInfoCard
+                    title="Замеров"
+                    value={String(history.length)}
+                    subtitle="Точек на графиках"
+                  />
+                  <CompactInfoCard
+                    title="Дней"
+                    value={String(dayCount)}
+                    subtitle="Дней с телеметрией"
+                  />
+                  <CompactInfoCard
+                    title="Последний замер"
+                    value={lastRecordedAt ? formatDateTime(lastRecordedAt) : '—'}
+                    subtitle="Конец доступных данных"
+                  />
+                </View>
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(150).springify()} className="mb-5">
+                <View className="flex-row items-center gap-2 mb-3">
+                  <Icon as={BarChart3} size={18} className="text-primary" />
+                  <Text className="text-xl font-bold text-foreground">Сводка за период</Text>
+                </View>
+                <View className="gap-3">
+                  <SummaryCard
                     title="Температура"
-                    unit="°C"
+                    value={`${metricStats.temperature?.average.toFixed(1) ?? '—'}°C`}
+                    subtitle={
+                      metricStats.temperature
+                        ? `Мин ${metricStats.temperature.min.toFixed(1)}° • Макс ${metricStats.temperature.max.toFixed(1)}° • ${formatTrendLabel(metricTrends.temperature, '°', 1)}`
+                        : 'Нет данных'
+                    }
                     icon={Thermometer}
                     iconColor="text-orange-600"
-                    data={tempData}
-                    config={CHART_CONFIGS.temperature}
                   />
-                </Animated.View>
-              )}
-              {humidityData && (
-                <Animated.View entering={FadeInDown.delay(280).springify()}>
-                  <ChartCard
+                  <SummaryCard
                     title="Влажность воздуха"
-                    unit="%"
+                    value={`${metricStats.airHumidity?.average.toFixed(0) ?? '—'}%`}
+                    subtitle={
+                      metricStats.airHumidity
+                        ? `Мин ${metricStats.airHumidity.min.toFixed(0)}% • Макс ${metricStats.airHumidity.max.toFixed(0)}% • ${formatTrendLabel(metricTrends.airHumidity, '%', 0)}`
+                        : 'Нет данных'
+                    }
                     icon={Wind}
                     iconColor="text-sky-600"
-                    data={humidityData}
-                    config={CHART_CONFIGS.airHumidity}
                   />
-                </Animated.View>
-              )}
-              {soilData && (
-                <Animated.View entering={FadeInDown.delay(360).springify()}>
-                  <ChartCard
+                  <SummaryCard
                     title="Влажность почвы"
-                    unit="%"
+                    value={`${metricStats.soilMoisture?.average.toFixed(0) ?? '—'}%`}
+                    subtitle={
+                      metricStats.soilMoisture
+                        ? `Мин ${metricStats.soilMoisture.min.toFixed(0)}% • Макс ${metricStats.soilMoisture.max.toFixed(0)}% • ${formatTrendLabel(metricTrends.soilMoisture, '%', 0)}`
+                        : 'Нет данных'
+                    }
                     icon={Droplets}
                     iconColor="text-emerald-600"
-                    data={soilData}
-                    config={CHART_CONFIGS.soilMoisture}
                   />
-                </Animated.View>
-              )}
-            </View>
+                </View>
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(180).springify()} className="mb-5">
+                <Text className="text-xl font-bold text-foreground mb-3">Измерения</Text>
+                <View className="gap-4">
+                  {(Object.keys(rawCharts) as MetricKey[]).map((key) => {
+                    const chartData = rawCharts[key];
+                    const config = CHART_CONFIGS[key];
+
+                    if (!chartData) return null;
+
+                    return (
+                      <ChartCard
+                        key={key}
+                        title={config.title}
+                        unit={config.unit}
+                        icon={config.icon}
+                        iconColor={config.iconColor}
+                        data={chartData}
+                        config={config}
+                      />
+                    );
+                  })}
+                </View>
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(220).springify()} className="mb-5">
+                <Text className="text-xl font-bold text-foreground mb-3">Суточные средние</Text>
+                <Text className="text-sm text-muted-foreground mb-3">
+                  Эти графики помогают увидеть общий тренд среды без шума от отдельных замеров.
+                </Text>
+                <View className="gap-4">
+                  {(Object.keys(dailyAverageCharts) as MetricKey[]).map((key) => {
+                    const chartData = dailyAverageCharts[key];
+                    const config = CHART_CONFIGS[key];
+
+                    if (!chartData) return null;
+
+                    return (
+                      <ChartCard
+                        key={`daily-average-${key}`}
+                        title={`${config.title} • среднее по дням`}
+                        unit={config.unit}
+                        icon={config.icon}
+                        iconColor={config.iconColor}
+                        data={chartData}
+                        config={config}
+                      />
+                    );
+                  })}
+                </View>
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(260).springify()} className="mb-5">
+                <Text className="text-xl font-bold text-foreground mb-3">Дневной диапазон</Text>
+                <Text className="text-sm text-muted-foreground mb-3">
+                  Минимумы и максимумы по дням помогают заметить перепады и нестабильность условий.
+                </Text>
+                <View className="gap-4">
+                  {(Object.keys(dailyRangeCharts) as MetricKey[]).map((key) => {
+                    const chartData = dailyRangeCharts[key];
+                    const config = CHART_CONFIGS[key];
+
+                    if (!chartData) return null;
+
+                    return (
+                      <ChartCard
+                        key={`daily-range-${key}`}
+                        title={`${config.title} • минимум и максимум`}
+                        unit={config.unit}
+                        icon={config.icon}
+                        iconColor={config.iconColor}
+                        data={chartData}
+                        config={config}
+                      />
+                    );
+                  })}
+                </View>
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(300).springify()}>
+                <Text className="text-xl font-bold text-foreground mb-3">Разброс по дням</Text>
+                <Text className="text-sm text-muted-foreground mb-3">
+                  Чем выше столбец, тем сильнее показатель менялся в течение дня.
+                </Text>
+                <View className="gap-4">
+                  {(Object.keys(dailySpreadCharts) as MetricKey[]).map((key) => {
+                    const chartData = dailySpreadCharts[key];
+                    const config = CHART_CONFIGS[key];
+
+                    if (!chartData) return null;
+
+                    return (
+                      <BarChartCard
+                        key={`daily-spread-${key}`}
+                        title={`${config.title} • разброс`}
+                        unit={config.unit}
+                        icon={config.icon}
+                        iconColor={config.iconColor}
+                        data={chartData}
+                        color={config.color}
+                        labelColor={config.label}
+                      />
+                    );
+                  })}
+                </View>
+              </Animated.View>
+            </>
           )}
-
-          {/* Watering history */}
-          <Animated.View entering={FadeInDown.delay(400).springify()}>
-            <Text className="text-xl font-bold text-foreground mb-3">История поливов</Text>
-
-            {loading ? (
-              <View className="gap-2">
-                {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}
-              </View>
-            ) : wateringGroups.length === 0 ? (
-              <View className="bg-card rounded-3xl p-6 items-center">
-                <Icon as={Droplets} size={32} className="text-muted-foreground mb-2" />
-                <Text className="text-muted-foreground text-center">Поливов пока не было</Text>
-              </View>
-            ) : (
-              <View className="gap-4">
-                {wateringGroups.map((group, gi) => (
-                  <View key={gi}>
-                    <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      {group.label}
-                    </Text>
-                    <View className="bg-card rounded-3xl overflow-hidden">
-                      {group.items.map((record, ri) => (
-                        <View key={ri}>
-                          {ri > 0 && <View className="h-px bg-border mx-4" />}
-                          <View className="flex-row items-center px-4 py-3.5 gap-3">
-                            <View className="bg-primary/10 rounded-2xl p-2.5">
-                              <Icon as={Droplets} size={16} className="text-primary" />
-                            </View>
-                            <View className="flex-1">
-                              <Text className="text-sm font-semibold text-foreground">
-                                Полив • уровень {record.level}
-                              </Text>
-                              <View className="flex-row gap-0.5 mt-1.5">
-                                {Array.from({ length: 10 }, (_, j) => (
-                                  <View
-                                    key={j}
-                                    className={`h-1.5 flex-1 rounded-full ${j < record.level ? 'bg-primary' : 'bg-muted'}`}
-                                  />
-                                ))}
-                              </View>
-                            </View>
-                            <Text className="text-xs text-muted-foreground font-medium">
-                              {formatTime(record.wateredAt)}
-                            </Text>
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-          </Animated.View>
         </View>
       </ScrollView>
 
-      {/* iOS date picker modals */}
-      {Platform.OS === 'ios' && (
+      {Platform.OS === 'ios' ? (
         <>
-          <Modal visible={showFromPicker} transparent animationType="slide">
-            <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' }}>
-              <View className="bg-card rounded-t-3xl pb-10">
-                <View className="flex-row items-center justify-between px-6 pt-4 pb-2">
-                  <TouchableOpacity onPress={cancelFromDate}>
-                    <Text className="text-base text-muted-foreground">Отмена</Text>
-                  </TouchableOpacity>
-                  <Text className="text-base font-semibold text-foreground">Начало периода</Text>
-                  <TouchableOpacity onPress={confirmFromDate}>
-                    <Text className="text-base font-semibold text-primary">Готово</Text>
-                  </TouchableOpacity>
-                </View>
-                {tempFromDate && (
-                  <DateTimePicker
-                    value={tempFromDate}
-                    mode="date"
-                    display="spinner"
-                    maximumDate={dateTo}
-                    onChange={onFromChange}
-                    style={{ height: 200 }}
-                  />
-                )}
-              </View>
-            </View>
-          </Modal>
-          <Modal visible={showToPicker} transparent animationType="slide">
-            <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' }}>
-              <View className="bg-card rounded-t-3xl pb-10">
-                <View className="flex-row items-center justify-between px-6 pt-4 pb-2">
-                  <TouchableOpacity onPress={cancelToDate}>
-                    <Text className="text-base text-muted-foreground">Отмена</Text>
-                  </TouchableOpacity>
-                  <Text className="text-base font-semibold text-foreground">Конец периода</Text>
-                  <TouchableOpacity onPress={confirmToDate}>
-                    <Text className="text-base font-semibold text-primary">Готово</Text>
-                  </TouchableOpacity>
-                </View>
-                {tempToDate && (
-                  <DateTimePicker
-                    value={tempToDate}
-                    mode="date"
-                    display="spinner"
-                    minimumDate={dateFrom}
-                    maximumDate={new Date()}
-                    onChange={onToChange}
-                    style={{ height: 200 }}
-                  />
-                )}
-              </View>
-            </View>
-          </Modal>
+          <Dialog
+            open={showFromPicker}
+            onOpenChange={(open) => {
+              if (!open) cancelFromDate();
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Начало периода</DialogTitle>
+              </DialogHeader>
+              {tempFromDate ? (
+                <DateTimePicker
+                  value={tempFromDate}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={dateTo}
+                  onChange={onFromChange}
+                  style={{ height: 200 }}
+                />
+              ) : null}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="secondary" onPress={cancelFromDate}>
+                    <Text>Отмена</Text>
+                  </Button>
+                </DialogClose>
+                <Button onPress={confirmFromDate}>
+                  <Text className="text-primary-foreground">Готово</Text>
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={showToPicker}
+            onOpenChange={(open) => {
+              if (!open) cancelToDate();
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Конец периода</DialogTitle>
+              </DialogHeader>
+              {tempToDate ? (
+                <DateTimePicker
+                  value={tempToDate}
+                  mode="date"
+                  display="spinner"
+                  minimumDate={dateFrom}
+                  maximumDate={new Date()}
+                  onChange={onToChange}
+                  style={{ height: 200 }}
+                />
+              ) : null}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="secondary" onPress={cancelToDate}>
+                    <Text>Отмена</Text>
+                  </Button>
+                </DialogClose>
+                <Button onPress={confirmToDate}>
+                  <Text className="text-primary-foreground">Готово</Text>
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
-      )}
+      ) : null}
     </View>
   );
 }
 
-function SummaryCard({ icon, label, value, bg, textColor }: {
-  icon: React.ComponentType<any>;
-  label: string;
+function CompactInfoCard({
+  title,
+  value,
+  subtitle,
+}: {
+  title: string;
   value: string;
-  bg: string;
-  textColor: string;
+  subtitle: string;
 }) {
   return (
-    <View className={`flex-1 ${bg} rounded-3xl p-4 items-center`}>
-      <Icon as={icon} size={20} className={textColor} />
-      <Text className={`text-2xl font-bold mt-1 ${textColor}`}>{value}</Text>
-      <Text className="text-xs text-muted-foreground mt-0.5">{label}</Text>
+    <View className="bg-card rounded-3xl p-4">
+      <Text className="text-sm text-muted-foreground">{title}</Text>
+      <Text className="text-lg font-bold text-foreground mt-1">{value}</Text>
+      <Text className="text-xs text-muted-foreground mt-1">{subtitle}</Text>
     </View>
   );
 }
 
-function ChartCard({ title, unit, icon, iconColor, data, config }: {
+function SummaryCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  iconColor,
+}: {
+  title: string;
+  value: string;
+  subtitle: string;
+  icon: LucideIcon;
+  iconColor: string;
+}) {
+  return (
+    <View className="bg-card rounded-3xl p-4 flex-row items-center gap-3">
+      <View className="bg-secondary/35 rounded-2xl p-3">
+        <Icon as={icon} size={18} className={iconColor} />
+      </View>
+      <View className="flex-1">
+        <Text className="text-sm text-muted-foreground">{title}</Text>
+        <Text className="text-xl font-bold text-foreground mt-0.5">{value}</Text>
+        <Text className="text-xs text-muted-foreground mt-1">{subtitle}</Text>
+      </View>
+    </View>
+  );
+}
+
+function ChartCard({
+  title,
+  unit,
+  icon,
+  iconColor,
+  data,
+  config,
+}: {
   title: string;
   unit: string;
-  icon: React.ComponentType<any>;
+  icon: LucideIcon;
   iconColor: string;
-  data: any;
-  config: any;
+  data: BasicChartData;
+  config: {
+    color: (opacity?: number) => string;
+    label: () => string;
+  };
 }) {
   return (
-    <View className="bg-card rounded-3xl p-4 overflow-hidden">
-      <View className="flex-row items-center gap-2 mb-3">
+    <View className="bg-card rounded-3xl p-3 overflow-hidden">
+      <View className="flex-row items-center gap-2 mb-2.5">
         <Icon as={icon} size={18} className={iconColor} />
-        <Text className="text-base font-semibold text-foreground">{title}</Text>
+        <Text className="text-base font-semibold text-foreground flex-1">{title}</Text>
         <Text className="text-xs text-muted-foreground">({unit})</Text>
       </View>
-      <LineChart
-        data={data}
-        width={CHART_WIDTH - 32}
-        height={160}
-        chartConfig={{
-          backgroundGradientFrom: config.bg,
-          backgroundGradientTo: config.bg,
-          color: config.color,
-          labelColor: config.label,
-          strokeWidth: 2,
-          decimalPlaces: 1,
-          propsForDots: { r: '3', strokeWidth: '1' },
-        }}
-        bezier
-        style={{ borderRadius: 12, marginLeft: -16 }}
-        withInnerLines={false}
-        withOuterLines={false}
-      />
+
+      {data.legend?.length ? (
+        <View className="flex-row gap-2 mb-2.5 flex-wrap">
+          {data.legend.map((item) => (
+            <View key={item} className="bg-secondary/45 rounded-full px-2.5 py-1">
+              <Text className="text-[11px] text-muted-foreground">{item}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <View className="rounded-[20px] overflow-hidden" style={{ backgroundColor: CHART_CANVAS_COLOR }}>
+        <LineChart
+          data={data}
+          width={CHART_WIDTH - 24}
+          height={220}
+          yAxisSuffix={unit}
+          formatYLabel={(value) => `${Math.round(Number(value))}`}
+          chartConfig={{
+            backgroundGradientFrom: CHART_CANVAS_COLOR,
+            backgroundGradientTo: CHART_CANVAS_COLOR_ALT,
+            color: config.color,
+            labelColor: () => CHART_LABEL_COLOR,
+            strokeWidth: 2,
+            decimalPlaces: 1,
+            useShadowColorFromDataset: true,
+            propsForDots: { r: '3', strokeWidth: '1' },
+            propsForBackgroundLines: {
+              stroke: 'rgba(75, 99, 83, 0.14)',
+              strokeDasharray: '',
+            },
+          }}
+          bezier
+          withShadow={data.datasets.length === 1}
+          style={{ borderRadius: 20, marginLeft: -10 }}
+          withVerticalLines={false}
+          withHorizontalLines
+          withOuterLines={false}
+          fromZero={false}
+        />
+      </View>
+      <View className="flex-row items-center justify-between mt-2 px-1">
+        <Text className="text-[11px] text-muted-foreground">Ось X: дата / время</Text>
+        <Text className="text-[11px] text-muted-foreground">Ось Y: {unit}</Text>
+      </View>
+    </View>
+  );
+}
+
+function BarChartCard({
+  title,
+  unit,
+  icon,
+  iconColor,
+  data,
+  color,
+  labelColor,
+}: {
+  title: string;
+  unit: string;
+  icon: LucideIcon;
+  iconColor: string;
+  data: BasicChartData;
+  color: (opacity?: number) => string;
+  labelColor: () => string;
+}) {
+  return (
+    <View className="bg-card rounded-3xl p-3 overflow-hidden">
+      <View className="flex-row items-center gap-2 mb-2.5">
+        <Icon as={icon} size={18} className={iconColor} />
+        <Text className="text-base font-semibold text-foreground flex-1">{title}</Text>
+        <Text className="text-xs text-muted-foreground">({unit})</Text>
+      </View>
+      <View className="rounded-[20px] overflow-hidden" style={{ backgroundColor: CHART_CANVAS_COLOR }}>
+        <BarChart
+          data={data}
+          width={CHART_WIDTH - 24}
+          height={220}
+          yAxisLabel=""
+          yAxisSuffix={unit}
+          fromZero
+          withInnerLines
+          showBarTops={false}
+          chartConfig={{
+            backgroundGradientFrom: CHART_CANVAS_COLOR,
+            backgroundGradientTo: CHART_CANVAS_COLOR_ALT,
+            color,
+            labelColor: () => CHART_LABEL_COLOR,
+            decimalPlaces: 1,
+            barPercentage: 0.55,
+            propsForBackgroundLines: {
+              stroke: 'rgba(75, 99, 83, 0.14)',
+              strokeDasharray: '',
+            },
+          }}
+          style={{ borderRadius: 20, marginLeft: -10 }}
+        />
+      </View>
+      <View className="flex-row items-center justify-between mt-2 px-1">
+        <Text className="text-[11px] text-muted-foreground">Ось X: день</Text>
+        <Text className="text-[11px] text-muted-foreground">Ось Y: {unit}</Text>
+      </View>
+    </View>
+  );
+}
+
+function HighlightsSkeleton() {
+  return (
+    <View className="gap-3">
+      {[0, 1, 2].map((item) => (
+        <Skeleton key={item} className="h-20 rounded-3xl" />
+      ))}
+    </View>
+  );
+}
+
+function SummarySkeleton() {
+  return (
+    <View className="gap-3">
+      {[0, 1, 2].map((item) => (
+        <Skeleton key={item} className="h-24 rounded-3xl" />
+      ))}
     </View>
   );
 }
 
 function ChartSkeleton() {
   return (
-    <View className="bg-card rounded-3xl p-4">
-      <Skeleton className="h-5 w-40 rounded-full mb-3" />
-      <Skeleton className="h-40 rounded-2xl" />
+    <View className="bg-card rounded-3xl p-3">
+      <Skeleton className="h-5 w-40 rounded-full mb-2.5" />
+      <Skeleton className="h-56 rounded-[20px]" />
     </View>
   );
 }

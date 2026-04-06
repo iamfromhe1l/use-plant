@@ -1,10 +1,22 @@
 import React, { useState } from 'react';
-import { View, Alert, TouchableOpacity } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { View, TouchableOpacity } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ScreenHeader } from '@/components/screen-header';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { toast } from '@/components/ui/toast';
 import { RotateCcw, Info, Cpu, Wifi, AlertTriangle } from 'lucide-react-native';
 import { CommandsApi } from '@/api/devices/commands';
 import { useDevices } from '@/contexts/devices-context/devices-context';
@@ -18,31 +30,20 @@ export default function DeviceSettingsScreen() {
   const device = devices.find((d) => d.deviceId === deviceId);
   const [resetting, setResetting] = useState(false);
 
-  const handleReset = () => {
+  const handleReset = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    Alert.alert(
-      'Сброс устройства',
-      'Вы уверены? Устройство будет перезагружено и сброшено к заводским настройкам.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Сбросить',
-          style: 'destructive',
-          onPress: async () => {
-            setResetting(true);
-            const response = await commandsApi.sendCommand(deviceId, { type: 'device_reset' });
-            setResetting(false);
-            if (response.state) {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('Успешно', 'Команда сброса отправлена');
-            } else {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-              Alert.alert('Ошибка', response.error?.message || 'Не удалось сбросить устройство');
-            }
-          },
-        },
-      ],
-    );
+    setResetting(true);
+    const response = await commandsApi.sendCommand(deviceId, { type: 'device_reset' });
+    setResetting(false);
+
+    if (response.state) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.success('Команда сброса отправлена');
+      return;
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    toast.error(response.error?.message || 'Не удалось сбросить устройство');
   };
 
   return (
@@ -103,18 +104,41 @@ export default function DeviceSettingsScreen() {
               Сброс устройства удалит все настройки Wi-Fi и сохранённые данные. Устройство вернётся к заводскому состоянию.
             </Text>
 
-            <TouchableOpacity
-              onPress={handleReset}
-              disabled={resetting}
-              activeOpacity={0.8}
-            >
-              <View className={`rounded-2xl py-4 flex-row items-center justify-center gap-2 ${resetting ? 'bg-muted' : 'bg-destructive/10'}`}>
-                <Icon as={RotateCcw} size={16} className={resetting ? 'text-muted-foreground' : 'text-destructive'} />
-                <Text className={`text-base font-semibold ${resetting ? 'text-muted-foreground' : 'text-destructive'}`}>
-                  {resetting ? 'Сброс...' : 'Сбросить устройство'}
-                </Text>
-              </View>
-            </TouchableOpacity>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <TouchableOpacity
+                  disabled={resetting}
+                  activeOpacity={0.8}
+                >
+                  <View className={`rounded-2xl py-4 flex-row items-center justify-center gap-2 ${resetting ? 'bg-muted' : 'bg-destructive/10'}`}>
+                    <Icon as={RotateCcw} size={16} className={resetting ? 'text-muted-foreground' : 'text-destructive'} />
+                    <Text className={`text-base font-semibold ${resetting ? 'text-muted-foreground' : 'text-destructive'}`}>
+                      {resetting ? 'Сброс...' : 'Сбросить устройство'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    <Text>Сброс устройства</Text>
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    <Text>
+                      Устройство будет перезагружено и сброшено к заводским настройкам.
+                    </Text>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>
+                    <Text>Отмена</Text>
+                  </AlertDialogCancel>
+                  <AlertDialogAction onPress={handleReset}>
+                    <Text>Сбросить</Text>
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </View>
         </Animated.View>
       </View>

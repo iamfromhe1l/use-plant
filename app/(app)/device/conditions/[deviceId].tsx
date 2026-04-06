@@ -1,32 +1,34 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import {
-  View,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
-  Modal,
-  Switch as RNSwitch,
-} from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
-import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
-import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useLocalSearchParams } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogClose,
-} from '@/components/ui/dialog';
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Droplets,
+  Leaf,
+  Plus,
+  Send,
+  Thermometer,
+  Trash2,
+  Wind,
+  type LucideIcon,
+} from 'lucide-react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Platform, ScrollView, Switch as RNSwitch, TouchableOpacity, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { CommandsApi } from '@/api/devices/commands';
+import type {
+  ComparisonOperator,
+  ISensorRule,
+  IWateringCondition,
+  SensorField,
+} from '@/api/devices/types/conditions';
+import { ScreenHeader } from '@/components/screen-header';
+import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/toast';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,655 +40,960 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { ScreenHeader } from '@/components/screen-header';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Icon } from '@/components/ui/icon';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Text } from '@/components/ui/text';
 import { WaterLevelBar } from '@/components/water-level-bar';
 import { ICON_MAP } from '@/consts/icons';
-import {
-  Plus,
-  Trash2,
-  Droplets,
-  Thermometer,
-  Wind,
-  Clock,
-  Send,
-  AlertCircle,
-  CheckCircle2,
-  Leaf,
-} from 'lucide-react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { CommandsApi } from '@/api/devices/commands';
 import { useDevices } from '@/contexts/devices-context/devices-context';
-import type {
-  IWateringCondition,
-  ISensorRule,
-  SensorField,
-  ComparisonOperator,
-} from '@/api/devices/types/conditions';
-import * as Haptics from 'expo-haptics';
+import {
+  describeWateringCondition,
+  getWateringConditionsStorageKey,
+  WATERING_DAY_LABELS,
+  WATERING_SENSOR_UNITS,
+} from '@/lib/watering-conditions';
 
 const commandsApi = new CommandsApi();
 
-const SENSOR_OPTIONS: { value: SensorField; label: string; icon: React.ComponentType<any> }[] = [
-  { value: 'temperature',  label: 'Температура',    icon: Thermometer },
-  { value: 'airHumidity',  label: 'Влажн. воздуха', icon: Wind },
-  { value: 'soilMoisture', label: 'Влажн. почвы',   icon: Droplets },
+const SENSOR_OPTIONS: {
+  value: SensorField;
+  label: string;
+  shortLabel: string;
+  icon: LucideIcon;
+}[] = [
+  { value: 'temperature', label: 'Температура', shortLabel: 'Темп.', icon: Thermometer },
+  { value: 'airHumidity', label: 'Влажность воздуха', shortLabel: 'Воздух', icon: Wind },
+  { value: 'soilMoisture', label: 'Влажность почвы', shortLabel: 'Почва', icon: Droplets },
 ];
-
-const SENSOR_UNITS: Record<SensorField, string> = {
-  temperature:  '°C',
-  airHumidity:  '%',
-  soilMoisture: '%',
-};
 
 const SENSOR_RANGES: Record<SensorField, { min: number; max: number; step: number }> = {
-  temperature:  { min: -10, max: 60,  step: 1 },
-  airHumidity:  { min: 0,   max: 100, step: 1 },
-  soilMoisture: { min: 0,   max: 100, step: 1 },
+  temperature: { min: -10, max: 60, step: 1 },
+  airHumidity: { min: 0, max: 100, step: 1 },
+  soilMoisture: { min: 0, max: 100, step: 1 },
 };
 
-const OP_OPTIONS: { value: ComparisonOperator; label: string }[] = [
-  { value: 'lt', label: 'Меньше (<)' },
-  { value: 'eq', label: 'Равно (=)'  },
-  { value: 'gt', label: 'Больше (>)' },
+const OP_OPTIONS: {
+  value: ComparisonOperator;
+  label: string;
+  shortLabel: string;
+}[] = [
+  { value: 'lt', label: 'Меньше', shortLabel: '<' },
+  { value: 'eq', label: 'Равно', shortLabel: '=' },
+  { value: 'gt', label: 'Больше', shortLabel: '>' },
 ];
 
-const DAY_LABELS = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
-const OP_SYMBOLS: Record<ComparisonOperator, string> = { lt: '<', eq: '=', gt: '>' };
+const DAY_PRESETS = [
+  { label: 'Каждый день', days: [0, 1, 2, 3, 4, 5, 6] },
+  { label: 'Будни', days: [1, 2, 3, 4, 5] },
+  { label: 'Выходные', days: [0, 6] },
+];
 
 let nextId = 1;
 const generateId = () => `cond_${Date.now()}_${nextId++}`;
+const MAX_SENSOR_INTERVAL_MINUTES = 360;
 
 function formatInterval(minutes: number) {
   if (minutes < 60) return `${minutes} мин`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m > 0 ? `${h}ч ${m}м` : `${h} ч`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}ч ${mins}м` : `${hours} ч`;
 }
 
-// ─── Compact per-plant summary ─────────────────────────────────────────────
-function PlantSummary({
-  plants,
-  conditions,
+function clampInterval(minutes: number) {
+  return Math.max(5, Math.min(MAX_SENSOR_INTERVAL_MINUTES, minutes));
+}
+
+function clampValue(value: number, field: SensorField) {
+  const range = SENSOR_RANGES[field];
+  return Math.max(range.min, Math.min(range.max, value));
+}
+
+function sameDays(left: number[], right: number[]) {
+  if (left.length !== right.length) return false;
+  return left.every((day, index) => day === right[index]);
+}
+
+function describeRule(rule: ISensorRule) {
+  const sensorLabel = SENSOR_OPTIONS.find((option) => option.value === rule.field)?.label ?? 'Датчик';
+  const operatorLabel = OP_OPTIONS.find((option) => option.value === rule.operator)?.label.toLowerCase() ?? '';
+  return `${sensorLabel} ${operatorLabel} ${rule.value}${WATERING_SENSOR_UNITS[rule.field]}`;
+}
+
+function ChoiceChip({
+  label,
+  icon,
+  active,
+  onPress,
 }: {
-  plants: { index: number; name: string; icon: string }[];
-  conditions: IWateringCondition[];
+  label: string;
+  icon?: LucideIcon;
+  active: boolean;
+  onPress: () => void;
 }) {
-  if (conditions.length === 0) return null;
-
   return (
-    <Animated.View entering={FadeInDown.delay(50).springify()} className="mb-6">
-      <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-        Итог по растениям
-      </Text>
-      <View className="bg-card rounded-3xl overflow-hidden">
-        {plants.map((plant, pi) => {
-          const PlantIcon = ICON_MAP[plant.icon] || Leaf;
-          const plantConds = conditions.filter((c) => c.plantIndex === plant.index && c.enabled);
-
-          return (
-            <View key={plant.index}>
-              {pi > 0 && <View className="h-px bg-border mx-4" />}
-              <View className="px-4 py-3.5">
-                <View className="flex-row items-center gap-2 mb-2">
-                  <View className="bg-primary/10 rounded-xl p-1.5">
-                    <Icon as={PlantIcon} size={14} className="text-primary" />
-                  </View>
-                  <Text className="text-sm font-semibold text-foreground">{plant.name}</Text>
-                  {plantConds.length > 0 && (
-                    <View className="ml-auto bg-primary/10 rounded-full px-2 py-0.5">
-                      <Text className="text-xs font-medium text-primary">
-                        {plantConds.length} усл.
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {plantConds.length === 0 ? (
-                  <Text className="text-xs text-muted-foreground pl-1">Нет активных условий</Text>
-                ) : (
-                  <View className="gap-1">
-                    {plantConds.map((cond) => (
-                      <View key={cond.id} className="flex-row items-start gap-2">
-                        <Icon
-                          as={cond.type === 'sensor' ? Droplets : Clock}
-                          size={11}
-                          className="text-muted-foreground mt-0.5"
-                        />
-                        {cond.type === 'sensor' && cond.rules && (
-                          <Text className="text-xs text-muted-foreground flex-1">
-                            {cond.rules.map((r) =>
-                              `${SENSOR_OPTIONS.find((o) => o.value === r.field)?.label} ${OP_SYMBOLS[r.operator]} ${r.value}${SENSOR_UNITS[r.field]}`
-                            ).join(' & ')} → ур.{cond.level}
-                            {cond.interval > 0 ? ` / ${formatInterval(cond.interval)}` : ''}
-                          </Text>
-                        )}
-                        {cond.type === 'schedule' && cond.schedule && (
-                          <Text className="text-xs text-muted-foreground flex-1">
-                            {cond.schedule.time}  {cond.schedule.days.map((d) => DAY_LABELS[d]).join(' ')} → ур.{cond.level}
-                          </Text>
-                        )}
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            </View>
-          );
-        })}
+    <TouchableOpacity className="flex-1" activeOpacity={0.85} onPress={onPress}>
+      <View
+        className={`rounded-2xl px-3 py-3 items-center justify-center gap-1.5 border ${
+          active
+            ? 'bg-primary border-primary'
+            : 'bg-secondary/45 border-border/70'
+        }`}
+      >
+        {icon ? (
+          <Icon
+            as={icon}
+            size={16}
+            className={active ? 'text-primary-foreground' : 'text-muted-foreground'}
+          />
+        ) : null}
+        <Text
+          className={`text-xs font-semibold ${
+            active ? 'text-primary-foreground' : 'text-foreground'
+          }`}
+        >
+          {label}
+        </Text>
       </View>
-    </Animated.View>
+    </TouchableOpacity>
   );
 }
 
-// ─── Main screen ───────────────────────────────────────────────────────────
-export default function ConditionsScreen() {
-  const { deviceId } = useLocalSearchParams<{ deviceId: string }>();
-  const { devices } = useDevices();
-  const device = devices.find((d) => d.deviceId === deviceId);
-  const plants = device?.plants || [];
+function AddConditionCard({
+  title,
+  description,
+  icon,
+  iconClassName,
+  containerClassName,
+  onPress,
+}: {
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  iconClassName: string;
+  containerClassName: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity activeOpacity={0.88} onPress={onPress}>
+      <View className={`rounded-3xl border p-4 ${containerClassName}`}>
+        <View className="flex-row items-center gap-3">
+          <View className="rounded-2xl bg-background/70 p-3">
+            <Icon as={icon} size={20} className={iconClassName} />
+          </View>
+          <View className="flex-1">
+            <Text className="text-base font-semibold text-foreground">{title}</Text>
+            <Text className="text-sm text-muted-foreground mt-1">{description}</Text>
+          </View>
+          <Icon as={Plus} size={18} className={iconClassName} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
 
-  const [conditions, setConditions]       = useState<IWateringCondition[]>([]);
-  const [sending, setSending]             = useState(false);
-  const [sent, setSent]                   = useState(false);
-  const [error, setError]                 = useState<string | null>(null);
+export default function ConditionsScreen() {
+  const { deviceId, plantIndex: plantIndexParam } = useLocalSearchParams<{
+    deviceId: string;
+    plantIndex?: string;
+  }>();
+  const { devices } = useDevices();
+  const device = devices.find((item) => item.deviceId === deviceId);
+  const plants = device?.plants || [];
+  const selectedPlantIndex = Number(plantIndexParam || plants[0]?.index || 1);
+  const selectedPlant = plants.find((plant) => plant.index === selectedPlantIndex) || plants[0] || null;
+  const PlantIcon = selectedPlant ? (ICON_MAP[selectedPlant.icon] || Leaf) : Leaf;
+  const storageKey = getWateringConditionsStorageKey(deviceId);
+
+  const [conditions, setConditions] = useState<IWateringCondition[]>([]);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [sending, setSending] = useState(false);
   const [timePickerFor, setTimePickerFor] = useState<string | null>(null);
   const [tempPickerTime, setTempPickerTime] = useState<Date | null>(null);
   const [intervalDialogFor, setIntervalDialogFor] = useState<string | null>(null);
-  const [tempInterval, setTempInterval]   = useState(60);
+  const [tempInterval, setTempInterval] = useState(60);
 
-  const plantOptions = useMemo(
-    () => plants.map((p) => ({ value: String(p.index), label: p.name })),
-    [plants],
+  useEffect(() => {
+    let active = true;
+
+    const loadDraft = async () => {
+      try {
+        const storedConditions = await AsyncStorage.getItem(storageKey);
+
+        if (!active) return;
+
+        if (storedConditions) {
+          const parsed = JSON.parse(storedConditions);
+          setConditions(Array.isArray(parsed) ? parsed : []);
+        } else {
+          setConditions([]);
+        }
+      } catch {
+        if (active) {
+          setConditions([]);
+        }
+      } finally {
+        if (active) {
+          setDraftLoaded(true);
+        }
+      }
+    };
+
+    void loadDraft();
+
+    return () => {
+      active = false;
+    };
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (!draftLoaded) return;
+
+    const timeoutId = setTimeout(() => {
+      void AsyncStorage.setItem(storageKey, JSON.stringify(conditions));
+    }, 150);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [conditions, draftLoaded, storageKey]);
+
+  const plantConditions = useMemo(
+    () => conditions.filter((condition) => condition.plantIndex === selectedPlantIndex),
+    [conditions, selectedPlantIndex]
   );
+  const enabledPlantConditions = plantConditions.filter((condition) => condition.enabled);
 
-  // ── Condition CRUD ────────────────────────────────────────────────
+  const updateCondition = useCallback((id: string, updates: Partial<IWateringCondition>) => {
+    setConditions((prev) =>
+      prev.map((condition) => (condition.id === id ? { ...condition, ...updates } : condition))
+    );
+  }, []);
+
   const addSensorCondition = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const firstPlantIndex = plants[0]?.index || 1;
-    setConditions((prev) => [...prev, {
-      id: generateId(), plantIndex: firstPlantIndex, type: 'sensor',
-      level: 5, interval: 60, rules: [{ field: 'soilMoisture', operator: 'lt', value: 30 }], enabled: true,
-    }]);
+    setConditions((prev) => [
+      ...prev,
+      {
+        id: generateId(),
+        plantIndex: selectedPlantIndex,
+        type: 'sensor',
+        level: 5,
+        interval: 60,
+        rules: [{ field: 'soilMoisture', operator: 'lt', value: 30 }],
+        enabled: true,
+      },
+    ]);
   };
 
   const addScheduleCondition = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const firstPlantIndex = plants[0]?.index || 1;
-    setConditions((prev) => [...prev, {
-      id: generateId(), plantIndex: firstPlantIndex, type: 'schedule',
-      level: 5, interval: 0, schedule: { time: '08:00', days: [1, 2, 3, 4, 5] }, enabled: true,
-    }]);
+    setConditions((prev) => [
+      ...prev,
+      {
+        id: generateId(),
+        plantIndex: selectedPlantIndex,
+        type: 'schedule',
+        level: 5,
+        interval: 0,
+        schedule: { time: '08:00', days: [1, 2, 3, 4, 5] },
+        enabled: true,
+      },
+    ]);
   };
-
-  const updateCondition = useCallback((id: string, updates: Partial<IWateringCondition>) => {
-    setConditions((prev) => prev.map((c) => c.id === id ? { ...c, ...updates } : c));
-  }, []);
 
   const removeCondition = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setConditions((prev) => prev.filter((c) => c.id !== id));
+    setConditions((prev) => prev.filter((condition) => condition.id !== id));
   };
 
-  const updateRule = (condId: string, ruleIdx: number, updates: Partial<ISensorRule>) => {
-    setConditions((prev) => prev.map((c) => {
-      if (c.id !== condId || !c.rules) return c;
-      const newRules = [...c.rules];
-      newRules[ruleIdx] = { ...newRules[ruleIdx], ...updates };
-      return { ...c, rules: newRules };
-    }));
+  const setConditionEnabled = (id: string, enabled: boolean) => {
+    Haptics.selectionAsync();
+    updateCondition(id, { enabled });
   };
 
-  const addRule = (condId: string) => {
-    setConditions((prev) => prev.map((c) => {
-      if (c.id !== condId) return c;
-      return { ...c, rules: [...(c.rules || []), { field: 'temperature' as SensorField, operator: 'gt' as ComparisonOperator, value: 25 }] };
-    }));
+  const updateRule = (conditionId: string, ruleIndex: number, updates: Partial<ISensorRule>) => {
+    setConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId || !condition.rules) return condition;
+
+        const nextRules = [...condition.rules];
+        nextRules[ruleIndex] = { ...nextRules[ruleIndex], ...updates };
+
+        return { ...condition, rules: nextRules };
+      })
+    );
   };
 
-  const removeRule = (condId: string, ruleIdx: number) => {
-    setConditions((prev) => prev.map((c) => {
-      if (c.id !== condId || !c.rules) return c;
-      return { ...c, rules: c.rules.filter((_, i) => i !== ruleIdx) };
-    }));
+  const changeRuleField = (conditionId: string, ruleIndex: number, field: SensorField) => {
+    setConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId || !condition.rules) return condition;
+
+        const nextRules = [...condition.rules];
+        const currentRule = nextRules[ruleIndex];
+        nextRules[ruleIndex] = {
+          ...currentRule,
+          field,
+          value: clampValue(currentRule.value, field),
+        };
+
+        return { ...condition, rules: nextRules };
+      })
+    );
   };
 
-  const toggleDay = (condId: string, day: number) => {
-    setConditions((prev) => prev.map((c) => {
-      if (c.id !== condId || !c.schedule) return c;
-      const days = c.schedule.days.includes(day)
-        ? c.schedule.days.filter((d) => d !== day)
-        : [...c.schedule.days, day].sort();
-      return { ...c, schedule: { ...c.schedule, days } };
-    }));
+  const addRule = (conditionId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setConditions((prev) =>
+      prev.map((condition) =>
+        condition.id === conditionId
+          ? {
+              ...condition,
+              rules: [
+                ...(condition.rules || []),
+                { field: 'temperature', operator: 'gt', value: 25 },
+              ],
+            }
+          : condition
+      )
+    );
   };
 
-  // ── Send ──────────────────────────────────────────────────────────
+  const removeRule = (conditionId: string, ruleIndex: number) => {
+    Haptics.selectionAsync();
+    setConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId || !condition.rules) return condition;
+        return {
+          ...condition,
+          rules: condition.rules.filter((_, index) => index !== ruleIndex),
+        };
+      })
+    );
+  };
+
+  const toggleDay = (conditionId: string, day: number) => {
+    Haptics.selectionAsync();
+    setConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId || !condition.schedule) return condition;
+
+        const days = condition.schedule.days.includes(day)
+          ? condition.schedule.days.filter((value) => value !== day)
+          : [...condition.schedule.days, day].sort();
+
+        return {
+          ...condition,
+          schedule: { ...condition.schedule, days },
+        };
+      })
+    );
+  };
+
+  const applyDayPreset = (conditionId: string, days: number[]) => {
+    Haptics.selectionAsync();
+    setConditions((prev) =>
+      prev.map((condition) =>
+        condition.id === conditionId && condition.schedule
+          ? {
+              ...condition,
+              schedule: { ...condition.schedule, days },
+            }
+          : condition
+      )
+    );
+  };
+
   const handleSend = async () => {
-    const enabledConditions = conditions.filter((c) => c.enabled);
-    if (enabledConditions.length === 0) return;
+    if (enabledPlantConditions.length === 0) return;
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSending(true);
-    setError(null);
-    setSent(false);
+
     const response = await commandsApi.sendCommand(deviceId, {
       type: 'set_conditions',
-      payload: { conditions: enabledConditions },
+      payload: {
+        conditions: conditions.filter((condition) => condition.enabled),
+      },
     });
+
     setSending(false);
+
     if (response.state) {
-      setSent(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setTimeout(() => setSent(false), 3000);
-    } else {
-      setError(response.error?.message || 'Не удалось отправить условия');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      toast.success(`Условия для ${selectedPlant.name} отправлены на устройство`);
+      return;
     }
+
+    toast.error(response.error?.message || 'Не удалось отправить условия');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   };
 
-  // ── Time picker ───────────────────────────────────────────────────
-  const openTimePicker = (condId: string) => {
-    const cond = conditions.find((c) => c.id === condId);
-    const [h, m] = (cond?.schedule?.time || '08:00').split(':').map(Number);
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    setTempPickerTime(d);
-    setTimePickerFor(condId);
+  const openTimePicker = (conditionId: string) => {
+    const condition = conditions.find((item) => item.id === conditionId);
+    const [hours, minutes] = (condition?.schedule?.time || '08:00').split(':').map(Number);
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    setTempPickerTime(date);
+    setTimePickerFor(conditionId);
   };
 
-  const applyTimePick = (condId: string, date: Date) => {
-    const hours   = String(date.getHours()).padStart(2, '0');
+  const applyTimePick = (conditionId: string, date: Date) => {
+    const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    updateCondition(condId, {
-      schedule: { ...conditions.find((c) => c.id === condId)!.schedule!, time: `${hours}:${minutes}` },
+
+    updateCondition(conditionId, {
+      schedule: {
+        ...conditions.find((condition) => condition.id === conditionId)?.schedule!,
+        time: `${hours}:${minutes}`,
+      },
     });
   };
 
-  const onTimePick = (_: any, selected?: Date) => {
+  const onTimePick = (_: unknown, selected?: Date) => {
     if (Platform.OS === 'android') {
-      setTimePickerFor(null); setTempPickerTime(null);
-      if (selected && timePickerFor) applyTimePick(timePickerFor, selected);
-    } else {
-      if (selected) setTempPickerTime(selected);
+      const targetConditionId = timePickerFor;
+      setTimePickerFor(null);
+      setTempPickerTime(null);
+
+      if (selected && targetConditionId) {
+        applyTimePick(targetConditionId, selected);
+      }
+
+      return;
+    }
+
+    if (selected) {
+      setTempPickerTime(selected);
     }
   };
 
   const confirmTimePick = () => {
-    if (timePickerFor && tempPickerTime) applyTimePick(timePickerFor, tempPickerTime);
-    setTimePickerFor(null); setTempPickerTime(null);
+    if (timePickerFor && tempPickerTime) {
+      applyTimePick(timePickerFor, tempPickerTime);
+    }
+
+    setTimePickerFor(null);
+    setTempPickerTime(null);
   };
 
-  const cancelTimePick = () => { setTimePickerFor(null); setTempPickerTime(null); };
+  const cancelTimePick = () => {
+    setTimePickerFor(null);
+    setTempPickerTime(null);
+  };
 
-  // ── Interval dialog ───────────────────────────────────────────────
-  const openIntervalDialog = (condId: string) => {
-    setTempInterval(conditions.find((c) => c.id === condId)?.interval || 60);
-    setIntervalDialogFor(condId);
+  const openIntervalDialog = (conditionId: string) => {
+    setTempInterval(
+      clampInterval(conditions.find((condition) => condition.id === conditionId)?.interval || 60)
+    );
+    setIntervalDialogFor(conditionId);
   };
 
   const saveInterval = () => {
-    if (intervalDialogFor) { updateCondition(intervalDialogFor, { interval: tempInterval }); setIntervalDialogFor(null); }
+    if (!intervalDialogFor) return;
+
+    updateCondition(intervalDialogFor, { interval: clampInterval(tempInterval) });
+    setIntervalDialogFor(null);
   };
 
-  // ── Render ────────────────────────────────────────────────────────
+  if (!selectedPlant) {
+    return (
+      <View className="flex-1 bg-background">
+        <ScreenHeader title="Условия полива" subtitle={device?.name || 'Устройство'} />
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-muted-foreground">Нет растений для настройки</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-background">
-      <ScreenHeader title="Условия полива" subtitle="Автоматический полив" />
+      <ScreenHeader
+        title="Условия полива"
+        subtitle={`${device?.name || 'Устройство'} • ${selectedPlant.name}`}
+      />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 136 }}>
         <View className="px-5 pt-4 gap-4">
+          <Animated.View entering={FadeInDown.delay(40).springify()} className="gap-3">
+            <AddConditionCard
+              title="Правило по датчикам"
+              description="Полив, когда датчики показывают нужные значения"
+              icon={Droplets}
+              iconClassName="text-sky-600"
+              containerClassName="bg-sky-500/10 border-sky-500/20"
+              onPress={addSensorCondition}
+            />
+            <AddConditionCard
+              title="Расписание"
+              description="Полив в конкретное время и по выбранным дням"
+              icon={Clock}
+              iconClassName="text-violet-600"
+              containerClassName="bg-violet-500/10 border-violet-500/20"
+              onPress={addScheduleCondition}
+            />
+          </Animated.View>
 
-          {/* Status messages */}
-          {error && (
-            <Animated.View entering={FadeIn} className="bg-destructive/10 rounded-2xl p-4 flex-row items-center gap-3">
-              <Icon as={AlertCircle} size={16} className="text-destructive" />
-              <Text className="text-sm text-destructive flex-1">{error}</Text>
-            </Animated.View>
-          )}
-          {sent && (
-            <Animated.View entering={FadeIn} className="bg-emerald-500/10 rounded-2xl p-4 flex-row items-center gap-3">
-              <Icon as={CheckCircle2} size={16} className="text-emerald-600" />
-              <Text className="text-sm text-emerald-700 flex-1">Условия отправлены на устройство!</Text>
-            </Animated.View>
-          )}
-
-          {/* Empty state */}
-          {conditions.length === 0 && (
-            <Animated.View entering={FadeIn} className="bg-card rounded-3xl p-8 items-center gap-2">
-              <View className="bg-primary/10 rounded-full p-4 mb-2">
-                <Icon as={Droplets} size={32} className="text-primary" />
+          {!draftLoaded ? (
+            <View className="gap-4">
+              <Skeleton className="h-40 rounded-3xl" />
+              <Skeleton className="h-40 rounded-3xl" />
+            </View>
+          ) : plantConditions.length === 0 ? (
+            <Animated.View entering={FadeIn} className="bg-card rounded-3xl p-8 items-center gap-3">
+              <View className="bg-primary/10 rounded-full p-4">
+                <Icon as={PlantIcon} size={30} className="text-primary" />
               </View>
-              <Text className="text-base font-semibold text-foreground">Нет условий полива</Text>
+              <Text className="text-base font-semibold text-foreground">
+                Для {selectedPlant.name} пока нет условий
+              </Text>
               <Text className="text-sm text-muted-foreground text-center">
-                Добавьте условие по датчикам или расписанию
+                Добавьте правило по датчикам или расписание выше. Все изменения сохраняются как
+                черновик и не затрагивают второе растение.
               </Text>
             </Animated.View>
-          )}
+          ) : (
+            plantConditions.map((condition, conditionIndex) => {
+              const isSensor = condition.type === 'sensor';
 
-          {/* Condition cards */}
-          {conditions.map((cond, condIdx) => {
-            const plantLabel = plantOptions.find((o) => o.value === String(cond.plantIndex))?.label || '—';
-            return (
-              <Animated.View
-                key={cond.id}
-                entering={FadeInDown.delay(condIdx * 60).springify()}
-              >
-                <View className="bg-card rounded-3xl overflow-hidden">
-                  {/* Card header */}
-                  <View
-                    className={`px-4 py-3 flex-row items-center justify-between ${
-                      cond.type === 'sensor' ? 'bg-sky-500/8' : 'bg-purple-500/8'
-                    }`}
-                  >
-                    <View className="flex-row items-center gap-2">
-                      <View className={`rounded-xl p-2 ${cond.type === 'sensor' ? 'bg-sky-500/15' : 'bg-purple-500/15'}`}>
-                        <Icon
-                          as={cond.type === 'sensor' ? Droplets : Clock}
-                          size={16}
-                          className={cond.type === 'sensor' ? 'text-sky-600' : 'text-purple-600'}
-                        />
-                      </View>
-                      <Text className="text-base font-semibold text-foreground">
-                        {cond.type === 'sensor' ? 'По датчикам' : 'По расписанию'}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">· {plantLabel}</Text>
-                    </View>
-                    <View className="flex-row items-center gap-3">
-                      <RNSwitch
-                        value={cond.enabled}
-                        onValueChange={(v) => updateCondition(cond.id, { enabled: v })}
-                        trackColor={{ false: '#e5e7eb', true: '#16a34a' }}
-                        thumbColor="#fff"
-                        style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
-                      />
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <TouchableOpacity>
-                            <Icon as={Trash2} size={16} className="text-destructive/70" />
-                          </TouchableOpacity>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle><Text>Удалить условие?</Text></AlertDialogTitle>
-                            <AlertDialogDescription><Text>Это действие нельзя отменить.</Text></AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel><Text>Отмена</Text></AlertDialogCancel>
-                            <AlertDialogAction onPress={() => removeCondition(cond.id)}><Text>Удалить</Text></AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </View>
-                  </View>
-
-                  <View className="px-4 py-4 gap-4">
-                    {/* Plant selector */}
-                    <View>
-                      <Text className="text-xs font-medium text-muted-foreground mb-1.5">Растение</Text>
-                      <Select
-                        value={plantOptions.find((o) => o.value === String(cond.plantIndex)) ?? undefined}
-                        onValueChange={(opt) => { if (opt) updateCondition(cond.id, { plantIndex: Number(opt.value) }); }}
-                      >
-                        <SelectTrigger className="rounded-2xl"><SelectValue placeholder="Выберите растение" /></SelectTrigger>
-                        <SelectContent>
-                          {plantOptions.map((o) => (
-                            <SelectItem key={o.value} value={o.value} label={o.label}><Text>{o.label}</Text></SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </View>
-
-                    {/* Water level */}
-                    <View>
-                      <Text className="text-xs font-medium text-muted-foreground mb-2">
-                        Уровень полива: <Text className="text-foreground font-semibold">{cond.level}</Text>
-                      </Text>
-                      <WaterLevelBar
-                        value={cond.level}
-                        onChange={(val) => updateCondition(cond.id, { level: val })}
-                      />
-                    </View>
-
-                    {/* ── Sensor type ─────────────────────────── */}
-                    {cond.type === 'sensor' && (
-                      <>
-                        {/* Interval */}
-                        <TouchableOpacity onPress={() => openIntervalDialog(cond.id)} activeOpacity={0.8}>
-                          <View className="bg-secondary/40 rounded-2xl p-3.5 flex-row items-center justify-between">
-                            <View className="flex-row items-center gap-2">
-                              <Icon as={Clock} size={15} className="text-muted-foreground" />
-                              <Text className="text-sm text-foreground">Интервал проверки</Text>
-                            </View>
-                            <View className="bg-primary/10 rounded-full px-3 py-1">
-                              <Text className="text-xs font-semibold text-primary">{formatInterval(cond.interval)}</Text>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-
-                        {/* Rules */}
-                        <View className="gap-3">
-                          {cond.rules?.map((rule, ruleIdx) => {
-                            const range = SENSOR_RANGES[rule.field];
-                            return (
-                              <View key={ruleIdx} className="bg-secondary/30 rounded-2xl p-3.5">
-                                <View className="flex-row items-center justify-between mb-2.5">
-                                  <Text className="text-xs font-semibold text-muted-foreground">Условие {ruleIdx + 1}</Text>
-                                  {(cond.rules?.length || 0) > 1 && (
-                                    <TouchableOpacity onPress={() => removeRule(cond.id, ruleIdx)}>
-                                      <Icon as={Trash2} size={13} className="text-destructive/70" />
-                                    </TouchableOpacity>
-                                  )}
-                                </View>
-
-                                <View className="gap-2">
-                                  <Select
-                                    value={SENSOR_OPTIONS.find((o) => o.value === rule.field)}
-                                    onValueChange={(opt) => { if (opt) updateRule(cond.id, ruleIdx, { field: opt.value as SensorField }); }}
-                                  >
-                                    <SelectTrigger className="rounded-xl h-10"><SelectValue placeholder="Показатель" /></SelectTrigger>
-                                    <SelectContent>
-                                      {SENSOR_OPTIONS.map((opt) => (
-                                        <SelectItem key={opt.value} value={opt.value} label={opt.label}><Text>{opt.label}</Text></SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-
-                                  <Select
-                                    value={OP_OPTIONS.find((o) => o.value === rule.operator)}
-                                    onValueChange={(opt) => { if (opt) updateRule(cond.id, ruleIdx, { operator: opt.value as ComparisonOperator }); }}
-                                  >
-                                    <SelectTrigger className="rounded-xl h-10"><SelectValue placeholder="Оператор" /></SelectTrigger>
-                                    <SelectContent>
-                                      {OP_OPTIONS.map((opt) => (
-                                        <SelectItem key={opt.value} value={opt.value} label={opt.label}><Text>{opt.label}</Text></SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </View>
-
-                                <View className="mt-3">
-                                  <Text className="text-center text-xl font-bold text-foreground mb-2">
-                                    {rule.value}{SENSOR_UNITS[rule.field]}
-                                  </Text>
-                                  <Slider
-                                    minimumValue={range.min} maximumValue={range.max} step={range.step}
-                                    value={rule.value}
-                                    onValueChange={(val) => updateRule(cond.id, ruleIdx, { value: Math.round(val) })}
-                                    minimumTrackTintColor="#16a34a" maximumTrackTintColor="#e5e7eb"
-                                  />
-                                  <View className="flex-row justify-between mt-1">
-                                    <Text className="text-xs text-muted-foreground">{range.min}{SENSOR_UNITS[rule.field]}</Text>
-                                    <Text className="text-xs text-muted-foreground">{range.max}{SENSOR_UNITS[rule.field]}</Text>
-                                  </View>
-                                </View>
-                              </View>
-                            );
-                          })}
+              return (
+                <Animated.View
+                  key={condition.id}
+                  entering={FadeInDown.delay(100 + conditionIndex * 60).springify()}
+                >
+                  <View className="bg-card rounded-3xl overflow-hidden">
+                    <View
+                      className={`px-4 py-4 border-b border-border/50 ${
+                        isSensor ? 'bg-sky-500/6' : 'bg-violet-500/6'
+                      }`}
+                    >
+                      <View className="flex-row items-start gap-3">
+                        <View
+                          className={`rounded-2xl p-2.5 ${
+                            isSensor ? 'bg-sky-500/14' : 'bg-violet-500/14'
+                          }`}
+                        >
+                          <Icon
+                            as={isSensor ? Droplets : Clock}
+                            size={18}
+                            className={isSensor ? 'text-sky-600' : 'text-violet-600'}
+                          />
                         </View>
 
-                        <TouchableOpacity onPress={() => addRule(cond.id)} activeOpacity={0.8}>
-                          <View className="flex-row items-center gap-1.5 py-1">
-                            <Icon as={Plus} size={14} className="text-primary" />
-                            <Text className="text-sm font-medium text-primary">Добавить условие</Text>
-                          </View>
-                        </TouchableOpacity>
-                      </>
-                    )}
+                        <View className="flex-1">
+                          <Text className="text-base font-semibold text-foreground">
+                            {isSensor ? 'Полив по датчикам' : 'Полив по расписанию'}
+                          </Text>
+                          <Text className="text-sm text-muted-foreground mt-1">
+                            {describeWateringCondition(condition)}
+                          </Text>
+                        </View>
 
-                    {/* ── Schedule type ────────────────────────── */}
-                    {cond.type === 'schedule' && cond.schedule && (
-                      <>
-                        {/* Time picker button */}
-                        <TouchableOpacity onPress={() => openTimePicker(cond.id)} activeOpacity={0.85}>
-                          <View className="bg-primary/8 rounded-2xl p-4 flex-row items-center gap-4">
-                            <View className="bg-primary/15 rounded-xl p-2.5">
-                              <Icon as={Clock} size={20} className="text-primary" />
-                            </View>
-                            <Text className="text-3xl font-bold text-primary tracking-wide">
-                              {cond.schedule.time}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <TouchableOpacity activeOpacity={0.85}>
+                              <View className="bg-destructive/8 rounded-2xl px-3 py-2 flex-row items-center gap-1.5">
+                                <Icon as={Trash2} size={14} className="text-destructive" />
+                                <Text className="text-sm font-medium text-destructive">Удалить</Text>
+                              </View>
+                            </TouchableOpacity>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                <Text>Удалить условие?</Text>
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                <Text>Это действие нельзя отменить.</Text>
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>
+                                <Text>Отмена</Text>
+                              </AlertDialogCancel>
+                              <AlertDialogAction onPress={() => removeCondition(condition.id)}>
+                                <Text>Удалить</Text>
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </View>
+
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => setConditionEnabled(condition.id, !condition.enabled)}
+                        className="mt-4"
+                      >
+                        <View className="bg-background rounded-2xl px-4 py-3 flex-row items-center">
+                          <View className="flex-1">
+                            <Text className="text-sm font-semibold text-foreground">
+                              {condition.enabled ? 'Условие включено' : 'Условие выключено'}
                             </Text>
-                            <Text className="text-xs text-muted-foreground ml-auto">Нажмите изменить</Text>
+                            <Text className="text-xs text-muted-foreground mt-1">
+                              Выключенное условие сохранится, но не отправится на устройство
+                            </Text>
                           </View>
-                        </TouchableOpacity>
+                          <RNSwitch
+                            value={condition.enabled}
+                            onValueChange={(value) => setConditionEnabled(condition.id, value)}
+                            trackColor={{ false: '#e5e7eb', true: '#16a34a' }}
+                            thumbColor="#fff"
+                          />
+                        </View>
+                      </TouchableOpacity>
+                    </View>
 
-                        {/* Day toggles */}
-                        <View>
-                          <Text className="text-xs font-medium text-muted-foreground mb-2">Дни недели</Text>
-                          <View className="flex-row gap-1.5">
-                            {DAY_LABELS.map((label, dayIdx) => {
-                              const isActive = cond.schedule!.days.includes(dayIdx);
+                    <View className="px-4 py-4 gap-4">
+                      <View>
+                        <Text className="text-xs font-medium text-muted-foreground mb-2">
+                          Интенсивность полива
+                        </Text>
+                        <View className="bg-secondary/30 rounded-2xl p-4">
+                          <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-sm text-foreground">Уровень</Text>
+                            <View className="bg-primary/10 rounded-full px-3 py-1">
+                              <Text className="text-xs font-semibold text-primary">
+                                {condition.level} / 10
+                              </Text>
+                            </View>
+                          </View>
+                          <WaterLevelBar
+                            value={condition.level}
+                            onChange={(value) => updateCondition(condition.id, { level: value })}
+                          />
+                        </View>
+                      </View>
+
+                      {isSensor && condition.rules ? (
+                        <>
+                          <TouchableOpacity
+                            onPress={() => openIntervalDialog(condition.id)}
+                            activeOpacity={0.85}
+                          >
+                            <View className="bg-secondary/30 rounded-2xl px-4 py-4 flex-row items-center">
+                              <View className="bg-primary/10 rounded-2xl p-3">
+                                <Icon as={Clock} size={18} className="text-primary" />
+                              </View>
+                              <View className="flex-1 ml-3">
+                                <Text className="text-sm font-semibold text-foreground">
+                                  Интервал проверки
+                                </Text>
+                                <Text className="text-xs text-muted-foreground mt-1">
+                                  Как часто устройство сравнивает датчики с условиями
+                                </Text>
+                              </View>
+                              <View className="bg-primary/10 rounded-full px-3 py-1.5">
+                                <Text className="text-xs font-semibold text-primary">
+                                  {formatInterval(condition.interval)}
+                                </Text>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+
+                          <View className="gap-3">
+                            {condition.rules.map((rule, ruleIndex) => {
+                              const range = SENSOR_RANGES[rule.field];
+
                               return (
-                                <TouchableOpacity
-                                  key={dayIdx}
-                                  className="flex-1"
-                                  onPress={() => toggleDay(cond.id, dayIdx)}
-                                  activeOpacity={0.8}
-                                >
-                                  <View
-                                    className={`items-center py-2 rounded-xl ${
-                                      isActive ? 'bg-primary' : 'bg-secondary/50'
-                                    }`}
-                                  >
-                                    <Text
-                                      className={`text-xs font-semibold ${
-                                        isActive ? 'text-primary-foreground' : 'text-muted-foreground'
-                                      }`}
-                                    >
-                                      {label}
+                                <View key={ruleIndex} className="bg-secondary/25 rounded-2xl p-4">
+                                  <View className="flex-row items-center justify-between mb-3">
+                                    <Text className="text-sm font-semibold text-foreground">
+                                      Правило {ruleIndex + 1}
                                     </Text>
+                                    {condition.rules && condition.rules.length > 1 ? (
+                                      <TouchableOpacity
+                                        activeOpacity={0.85}
+                                        onPress={() => removeRule(condition.id, ruleIndex)}
+                                      >
+                                        <View className="bg-destructive/8 rounded-2xl px-3 py-2 flex-row items-center gap-1.5">
+                                          <Icon as={Trash2} size={13} className="text-destructive" />
+                                          <Text className="text-xs font-medium text-destructive">
+                                            Удалить
+                                          </Text>
+                                        </View>
+                                      </TouchableOpacity>
+                                    ) : null}
                                   </View>
-                                </TouchableOpacity>
+
+                                  <Text className="text-xs font-medium text-muted-foreground mb-2">
+                                    Показатель
+                                  </Text>
+                                  <View className="flex-row gap-2">
+                                    {SENSOR_OPTIONS.map((option) => (
+                                      <ChoiceChip
+                                        key={option.value}
+                                        label={option.shortLabel}
+                                        icon={option.icon}
+                                        active={rule.field === option.value}
+                                        onPress={() => changeRuleField(condition.id, ruleIndex, option.value)}
+                                      />
+                                    ))}
+                                  </View>
+
+                                  <Text className="text-xs font-medium text-muted-foreground mt-4 mb-2">
+                                    Сравнение
+                                  </Text>
+                                  <View className="flex-row gap-2">
+                                    {OP_OPTIONS.map((option) => (
+                                      <ChoiceChip
+                                        key={option.value}
+                                        label={`${option.label} ${option.shortLabel}`}
+                                        active={rule.operator === option.value}
+                                        onPress={() =>
+                                          updateRule(condition.id, ruleIndex, { operator: option.value })
+                                        }
+                                      />
+                                    ))}
+                                  </View>
+
+                                  <View className="mt-4 bg-background rounded-2xl p-4">
+                                    <Text className="text-xs font-medium text-muted-foreground mb-2">
+                                      Порог срабатывания
+                                    </Text>
+                                    <Text className="text-center text-2xl font-bold text-foreground">
+                                      {rule.value}
+                                      {WATERING_SENSOR_UNITS[rule.field]}
+                                    </Text>
+                                    <Text className="text-center text-xs text-muted-foreground mt-1">
+                                      {describeRule(rule)}
+                                    </Text>
+                                    <Slider
+                                      minimumValue={range.min}
+                                      maximumValue={range.max}
+                                      step={range.step}
+                                      value={rule.value}
+                                      onValueChange={(value) =>
+                                        updateRule(condition.id, ruleIndex, {
+                                          value: Math.round(value),
+                                        })
+                                      }
+                                      minimumTrackTintColor="#16a34a"
+                                      maximumTrackTintColor="#e5e7eb"
+                                      style={{ marginTop: 12 }}
+                                    />
+                                    <View className="flex-row justify-between mt-1">
+                                      <Text className="text-xs text-muted-foreground">
+                                        {range.min}
+                                        {WATERING_SENSOR_UNITS[rule.field]}
+                                      </Text>
+                                      <Text className="text-xs text-muted-foreground">
+                                        {range.max}
+                                        {WATERING_SENSOR_UNITS[rule.field]}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                </View>
                               );
                             })}
                           </View>
-                        </View>
-                      </>
-                    )}
+
+                          <TouchableOpacity activeOpacity={0.85} onPress={() => addRule(condition.id)}>
+                            <View className="rounded-2xl border border-dashed border-primary/40 bg-primary/5 px-4 py-4 flex-row items-center justify-center gap-2">
+                              <Icon as={Plus} size={16} className="text-primary" />
+                              <Text className="text-sm font-semibold text-primary">
+                                Добавить ещё одно правило
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        </>
+                      ) : null}
+
+                      {condition.type === 'schedule' && condition.schedule ? (
+                        <>
+                          <TouchableOpacity
+                            onPress={() => openTimePicker(condition.id)}
+                            activeOpacity={0.85}
+                          >
+                            <View className="bg-primary/8 rounded-2xl p-4 flex-row items-center">
+                              <View className="bg-primary/15 rounded-2xl p-3">
+                                <Icon as={Clock} size={20} className="text-primary" />
+                              </View>
+                              <View className="flex-1 ml-3">
+                                <Text className="text-sm font-semibold text-foreground">
+                                  Время полива
+                                </Text>
+                                <Text className="text-xs text-muted-foreground mt-1">
+                                  Нажмите, чтобы изменить время запуска
+                                </Text>
+                              </View>
+                              <Text className="text-3xl font-bold text-primary tracking-wide">
+                                {condition.schedule.time}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+
+                          <View>
+                            <Text className="text-xs font-medium text-muted-foreground mb-2">
+                              Быстрый выбор дней
+                            </Text>
+                            <View className="flex-row gap-2">
+                              {DAY_PRESETS.map((preset) => (
+                                <ChoiceChip
+                                  key={preset.label}
+                                  label={preset.label}
+                                  active={sameDays(condition.schedule?.days || [], preset.days)}
+                                  onPress={() => applyDayPreset(condition.id, preset.days)}
+                                />
+                              ))}
+                            </View>
+                          </View>
+
+                          <View>
+                            <Text className="text-xs font-medium text-muted-foreground mb-2">
+                              Дни недели
+                            </Text>
+                            <View className="flex-row flex-wrap gap-2">
+                              {WATERING_DAY_LABELS.map((label, dayIndex) => {
+                                const isActive = condition.schedule?.days.includes(dayIndex);
+
+                                return (
+                                  <TouchableOpacity
+                                    key={label}
+                                    activeOpacity={0.85}
+                                    onPress={() => toggleDay(condition.id, dayIndex)}
+                                    style={{ width: '23%' }}
+                                  >
+                                    <View
+                                      className={`rounded-2xl py-3 items-center border ${
+                                        isActive
+                                          ? 'bg-primary border-primary'
+                                          : 'bg-secondary/45 border-border/70'
+                                      }`}
+                                    >
+                                      <Text
+                                        className={`text-sm font-semibold ${
+                                          isActive ? 'text-primary-foreground' : 'text-foreground'
+                                        }`}
+                                      >
+                                        {label}
+                                      </Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        </>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-              </Animated.View>
-            );
-          })}
-
-          {/* Add buttons */}
-          <Animated.View entering={FadeInDown.delay(200).springify()} className="flex-row gap-3 mt-1">
-            <TouchableOpacity className="flex-1" onPress={addSensorCondition} activeOpacity={0.85}>
-              <View className="bg-sky-500/10 border border-sky-500/20 rounded-2xl py-3.5 flex-row items-center justify-center gap-2">
-                <Icon as={Droplets} size={16} className="text-sky-600" />
-                <Text className="text-sm font-semibold text-sky-700">По датчикам</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity className="flex-1" onPress={addScheduleCondition} activeOpacity={0.85}>
-              <View className="bg-purple-500/10 border border-purple-500/20 rounded-2xl py-3.5 flex-row items-center justify-center gap-2">
-                <Icon as={Clock} size={16} className="text-purple-600" />
-                <Text className="text-sm font-semibold text-purple-700">По расписанию</Text>
-              </View>
-            </TouchableOpacity>
-          </Animated.View>
-
-          {/* Per-plant summary */}
-          {plants.length > 0 && conditions.length > 0 && (
-            <PlantSummary plants={plants} conditions={conditions} />
+                </Animated.View>
+              );
+            })
           )}
         </View>
       </ScrollView>
 
-      {/* Fixed send button */}
       <View className="absolute bottom-0 left-0 right-0 px-5 pb-8 pt-3 bg-background/95">
         <TouchableOpacity
           onPress={handleSend}
-          disabled={sending || conditions.filter((c) => c.enabled).length === 0}
+          disabled={sending || enabledPlantConditions.length === 0}
           activeOpacity={0.88}
         >
           <View
             className={`rounded-2xl py-4 flex-row items-center justify-center gap-2 ${
-              sending || conditions.filter((c) => c.enabled).length === 0
-                ? 'bg-muted'
-                : 'bg-primary'
+              sending || enabledPlantConditions.length === 0 ? 'bg-muted' : 'bg-primary'
             }`}
           >
             <Icon as={Send} size={18} className="text-primary-foreground" />
             <Text className="text-base font-semibold text-primary-foreground">
-              {sending ? 'Отправка...' : 'Отправить на устройство'}
+              {sending ? 'Отправка...' : 'Сохранить и отправить'}
             </Text>
           </View>
         </TouchableOpacity>
       </View>
 
-      {/* ── iOS time picker modal ──────────────────────────────────── */}
-      {Platform.OS === 'ios' && (
-        <Modal visible={timePickerFor !== null} transparent animationType="slide">
-          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' }}>
-            <View className="bg-card rounded-t-3xl pb-10">
-              <View className="flex-row items-center justify-between px-6 pt-4 pb-2">
-                <TouchableOpacity onPress={cancelTimePick}>
-                  <Text className="text-base text-muted-foreground">Отмена</Text>
-                </TouchableOpacity>
-                <Text className="text-base font-semibold text-foreground">Время полива</Text>
-                <TouchableOpacity onPress={confirmTimePick}>
-                  <Text className="text-base font-semibold text-primary">Готово</Text>
-                </TouchableOpacity>
-              </View>
-              {tempPickerTime && (
-                <DateTimePicker
-                  value={tempPickerTime} mode="time" is24Hour display="spinner"
-                  onChange={onTimePick} style={{ height: 200 }}
-                />
-              )}
-            </View>
-          </View>
-        </Modal>
-      )}
-      {Platform.OS === 'android' && timePickerFor && tempPickerTime && (
-        <DateTimePicker value={tempPickerTime} mode="time" is24Hour display="default" onChange={onTimePick} />
-      )}
+      {Platform.OS === 'ios' ? (
+        <Dialog
+          open={timePickerFor !== null}
+          onOpenChange={(open) => {
+            if (!open) cancelTimePick();
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Время полива</DialogTitle>
+            </DialogHeader>
+            {tempPickerTime ? (
+              <DateTimePicker
+                value={tempPickerTime}
+                mode="time"
+                is24Hour
+                display="spinner"
+                minuteInterval={1}
+                onChange={onTimePick}
+                style={{ height: 200 }}
+              />
+            ) : null}
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="secondary" onPress={cancelTimePick}>
+                  <Text>Отмена</Text>
+                </Button>
+              </DialogClose>
+              <Button onPress={confirmTimePick}>
+                <Text className="text-primary-foreground">Готово</Text>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
-      {/* ── Interval dialog ────────────────────────────────────────── */}
+      {Platform.OS === 'android' && timePickerFor && tempPickerTime ? (
+        <DateTimePicker
+          value={tempPickerTime}
+          mode="time"
+          is24Hour
+          display="default"
+          minuteInterval={1}
+          onChange={onTimePick}
+        />
+      ) : null}
+
       <Dialog
         open={intervalDialogFor !== null}
-        onOpenChange={(open) => { if (!open) setIntervalDialogFor(null); }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIntervalDialogFor(null);
+          }
+        }}
       >
-        <DialogContent className="w-80">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle><Text>Интервал проверки</Text></DialogTitle>
+            <DialogTitle>Интервал проверки</DialogTitle>
           </DialogHeader>
           <View className="py-4">
             <Text className="text-center text-3xl font-bold text-foreground mb-4">
               {formatInterval(tempInterval)}
             </Text>
             <Slider
-              minimumValue={5} maximumValue={1440} step={5}
-              value={tempInterval} onValueChange={setTempInterval}
-              minimumTrackTintColor="#16a34a" maximumTrackTintColor="#e5e7eb"
+              minimumValue={5}
+              maximumValue={MAX_SENSOR_INTERVAL_MINUTES}
+              step={5}
+              value={tempInterval}
+              onValueChange={setTempInterval}
+              minimumTrackTintColor="#16a34a"
+              maximumTrackTintColor="#e5e7eb"
             />
             <View className="flex-row justify-between mt-2">
               <Text className="text-xs text-muted-foreground">5 мин</Text>
-              <Text className="text-xs text-muted-foreground">24 ч</Text>
+              <Text className="text-xs text-muted-foreground">6 ч</Text>
             </View>
           </View>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="secondary"><Text>Отмена</Text></Button>
+              <Button variant="secondary">
+                <Text>Отмена</Text>
+              </Button>
             </DialogClose>
             <Button onPress={saveInterval}>
               <Text className="text-primary-foreground">Сохранить</Text>

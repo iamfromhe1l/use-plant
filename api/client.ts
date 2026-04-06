@@ -1,8 +1,12 @@
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError, AxiosResponse } from 'axios';
 import type { IApiResponse, IApiError } from './types';
-import Constants from 'expo-constants';
 
-const API_BASE_URL = Constants?.expoConfig?.extra?.apiBaseUrl || 'http://192.168.0.105:4000';
+const FALLBACK_API_BASE_URL =
+  Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
+
+const API_BASE_URL = Constants?.expoConfig?.extra?.apiBaseUrl || FALLBACK_API_BASE_URL;
 
 export class ApiClient {
   private static token: string | null = null;

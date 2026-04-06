@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Stack, router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Network from 'expo-network';
 import { useDeviceLocal } from '@/contexts/device-local-context/device-local-context';
 import { Button } from '@/components/ui/button';
@@ -8,9 +9,9 @@ import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from '@/components/ui/toast';
 import { ScreenHeader } from '@/components/screen-header';
-import { Wifi, Lock, Unlock, RefreshCw, ArrowLeft, Radio, X, Check, ChevronRight } from 'lucide-react-native';
+import { Wifi, Lock, Unlock, RefreshCw, Radio, ChevronRight } from 'lucide-react-native';
 import { cn } from '@/lib/utils';
 
 export default function ConnectDeviceScreen() {
@@ -19,18 +20,32 @@ export default function ConnectDeviceScreen() {
   const [selectedNetwork, setSelectedNetwork] = useState<{ ssid: string; encrypted: boolean } | null>(null);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [isAutoSearching, setIsAutoSearching] = useState(false);
 
-  const findDevice = async () => {
-    setError(null);
+  const availableNetworks = useMemo(() => {
+    const bySsid = new Map<string, (typeof device.networks)[number]>();
+
+    device.networks
+      .filter((network) => network.ssid.trim().length > 0)
+      .sort((left, right) => right.rssi - left.rssi)
+      .forEach((network) => {
+        if (!bySsid.has(network.ssid)) {
+          bySsid.set(network.ssid, network);
+        }
+      });
+
+    return Array.from(bySsid.values());
+  }, [device.networks]);
+
+  const findDevice = async (automatic = false) => {
+    setIsAutoSearching(automatic);
 
     try {
       const phoneIp = await Network.getIpAddressAsync();
       const ipParts = phoneIp.split('.');
 
       if (ipParts.length !== 4) {
-        setError('Не удалось определить IP адрес телефона');
+        toast.error('Не удалось определить IP адрес телефона');
         return;
       }
 
@@ -46,11 +61,29 @@ export default function ConnectDeviceScreen() {
         }
       }
 
-      setError('Устройство не найдено. Убедитесь, что телефон подключен к Wi-Fi сети устройства');
+      toast.error(
+        automatic
+          ? 'Автопоиск не нашёл устройство. Подключитесь к сети PlantWatering-ESP32 и вернитесь в приложение, поиск повторится автоматически.'
+          : 'Устройство не найдено. Убедитесь, что телефон подключен к Wi‑Fi сети устройства.'
+      );
     } catch {
-      setError('Ошибка при поиске устройства');
+      toast.error(
+        automatic
+          ? 'Не удалось автоматически найти устройство. Проверьте подключение к сети PlantWatering-ESP32.'
+          : 'Ошибка при поиске устройства'
+      );
+    } finally {
+      setIsAutoSearching(false);
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (step === 'find') {
+        void findDevice(true);
+      }
+    }, [step])
+  );
 
   const handleSelectNetwork = (network: { ssid: string; encrypted: boolean }) => {
     setSelectedNetwork(network);
@@ -60,18 +93,15 @@ export default function ConnectDeviceScreen() {
   const handleConfigure = async () => {
     if (!selectedNetwork) return;
 
-    setError(null);
-    setSuccess(null);
-
     const success = await actions.configureDevice(selectedNetwork.ssid, password);
 
     if (success) {
-      setSuccess('Настройки сохранены! Устройство перезагружается и подключится к вашей Wi-Fi сети...');
+      toast.success('Настройки сохранены. Устройство перезагружается и подключится к вашей Wi‑Fi сети.');
       setTimeout(() => {
         router.push('/(app)');
       }, 3000);
     } else {
-      setError('Ошибка сохранения настроек');
+      toast.error('Ошибка сохранения настроек');
     }
   };
 
@@ -94,16 +124,6 @@ export default function ConnectDeviceScreen() {
               Настройте подключение к вашей Wi-Fi сети
             </Text>
           </View>
-          {error && (
-            <Alert variant="destructive" icon={X}>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          {success && (
-            <Alert variant="default" icon={Check}>
-              <AlertDescription>{success}</AlertDescription>
-            </Alert>
-          )}
           {step === 'find' && (
             <Card>
               <CardHeader>
@@ -122,16 +142,23 @@ export default function ConnectDeviceScreen() {
                   <Text className="text-sm text-muted-foreground">
                     3. Вернитесь в приложение и нажмите "Найти устройство"
                   </Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Поиск запускается автоматически, когда экран открывается или вы возвращаетесь в приложение
+                  </Text>
                 </View>
 
                 <Button
                   size="lg"
-                  onPress={findDevice}
-                  disabled={device.loading}
+                  onPress={() => findDevice(false)}
+                  disabled={device.loading || isAutoSearching}
                   className="flex-row items-center gap-2"
                 >
-                  <Icon as={Radio} size={20} className="text-background" />
-                  <Text>Найти устройство</Text>
+                  {device.loading || isAutoSearching ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <Icon as={Radio} size={20} className="text-background" />
+                  )}
+                  <Text>{isAutoSearching ? 'Ищем устройство...' : 'Найти устройство'}</Text>
                 </Button>
               </CardContent>
             </Card>
@@ -141,7 +168,7 @@ export default function ConnectDeviceScreen() {
               <CardHeader>
                 <CardTitle>Шаг 2 из 3</CardTitle>
                 <CardDescription>
-                  Найдено {device.networks.length} Wi-Fi сетей
+                  Найдено {availableNetworks.length} Wi-Fi сетей
                 </CardDescription>
               </CardHeader>
               <CardContent className="gap-4">
@@ -158,9 +185,9 @@ export default function ConnectDeviceScreen() {
                   )}
                   <Text>Обновить список</Text>
                 </Button>
-                {device.networks.length > 0 ? (
+                {availableNetworks.length > 0 ? (
                   <View className="gap-2">
-                    {device.networks.map((network) => {
+                    {availableNetworks.map((network) => {
                       return (
                         <Button
                           key={network.ssid}

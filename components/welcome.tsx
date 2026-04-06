@@ -1,82 +1,94 @@
-import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { router } from 'expo-router';
-import { Leaf, Calendar, Droplets, Sprout, Plus } from 'lucide-react-native';
+import { Leaf, Calendar, Droplets, Sprout, Plus, Zap } from 'lucide-react-native';
 import * as React from 'react';
-import { View } from 'react-native';
-import { Card, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
+import { TouchableOpacity, View } from 'react-native';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
+
+function FeatureRow({ icon, bg, color, title, subtitle, delay }: {
+  icon: React.ComponentType<any>;
+  bg: string;
+  color: string;
+  title: string;
+  subtitle: string;
+  delay: number;
+}) {
+  return (
+    <Animated.View entering={FadeInDown.delay(delay).springify()}>
+      <View className="bg-card rounded-3xl p-4 flex-row items-center gap-4">
+        <View className={`${bg} rounded-2xl p-3`}>
+          <Icon as={icon} size={22} className={color} />
+        </View>
+        <View className="flex-1">
+          <Text className="text-base font-semibold text-foreground">{title}</Text>
+          <Text className="text-sm text-muted-foreground mt-0.5">{subtitle}</Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
 
 export const Welcome = () => {
   const handleAddPlant = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/(app)/connect');
   };
 
   return (
-    <View className="flex-1 items-center justify-center gap-8">
-      <View className="items-center gap-4">
-        <View className="rounded-full bg-primary/10 p-6">
-          <Icon as={Leaf} size={48} className="text-primary" />
+    <View className="flex-1 justify-center gap-5">
+      {/* Hero */}
+      <Animated.View entering={FadeIn.delay(50)} className="items-center gap-3 py-4">
+        <View className="bg-primary/10 rounded-full p-8 mb-1">
+          <Icon as={Leaf} size={56} className="text-primary" />
         </View>
         <Text className="text-4xl font-extrabold text-foreground">usePlant</Text>
-        <Text className="text-center font-semibold text-lg text-muted-foreground">
-          Заботьтесь о своих растениях с умом
+        <Text className="text-center text-base text-muted-foreground px-6">
+          Умный уход за растениями — полив, мониторинг и расписание в одном месте
         </Text>
+      </Animated.View>
+
+      {/* Features */}
+      <View className="gap-3">
+        <FeatureRow
+          icon={Calendar}
+          bg="bg-blue-500/10"
+          color="text-blue-600"
+          title="График полива"
+          subtitle="Автоматически по расписанию"
+          delay={150}
+        />
+        <FeatureRow
+          icon={Droplets}
+          bg="bg-emerald-500/10"
+          color="text-emerald-600"
+          title="Умные датчики"
+          subtitle="Влажность, температура, почва"
+          delay={220}
+        />
+        <FeatureRow
+          icon={Zap}
+          bg="bg-purple-500/10"
+          color="text-purple-600"
+          title="Автополив"
+          subtitle="Условия по данным датчиков"
+          delay={290}
+        />
       </View>
-      <Card className="w-full">
-        <CardContent className="flex-row items-center gap-4 px-4 py-0">
-          <View className="rounded-full bg-blue-100 p-3 dark:bg-blue-900">
-            <Icon as={Calendar} size={24} className="text-blue-600 dark:text-blue-300" />
+
+      {/* CTA */}
+      <Animated.View entering={FadeInDown.delay(380).springify()}>
+        <TouchableOpacity onPress={handleAddPlant} activeOpacity={0.85}>
+          <View className="bg-primary rounded-3xl py-4 flex-row items-center justify-center gap-2">
+            <Icon as={Plus} size={20} className="text-primary-foreground" />
+            <Text className="text-base font-bold text-primary-foreground">Добавить устройство</Text>
           </View>
-          <View className="flex-1">
-            <CardTitle className="text-lg">График полива</CardTitle>
-            <CardDescription>
-              Никогда не забывайте поливать свои растения
-            </CardDescription>
-          </View>
-        </CardContent>
-      </Card>
-      <Card className="w-full">
-        <CardContent className="flex-row items-center gap-4 px-4 py-0">
-          <View className="rounded-full bg-green-100 p-3 dark:bg-green-900">
-            <Icon as={Droplets} size={24} className="text-green-600 dark:text-green-300" />
-          </View>
-          <View className="flex-1">
-            <CardTitle className="text-lg">Умные датчики</CardTitle>
-            <CardDescription>
-              Влажность почвы, освещение, температура и другие показатели
-            </CardDescription>
-          </View>
-        </CardContent>
-      </Card>
-      <Card className="w-full">
-        <CardContent className="flex-row items-center gap-4 px-4 py-0">
-          <View className="rounded-full bg-purple-100 p-3 dark:bg-purple-900">
-            <Icon as={Sprout} size={24} className="text-purple-600 dark:text-purple-300" />
-          </View>
-          <View className="flex-1">
-            <CardTitle className="text-lg">Автополив</CardTitle>
-            <CardDescription>
-              Настройка автоматического полива по расписанию
-            </CardDescription>
-          </View>
-        </CardContent>
-      </Card>
-      <View className="w-full gap-2">
-        <Button
-          size="lg"
-          className="w-full"
-          onPress={handleAddPlant}
-        >
-          <Icon as={Plus} size={20} className="text-primary-foreground" />
-          <Text className="font-semibold text-primary-foreground">
-            Добавить устройство
-          </Text>
-        </Button>
-        <Text className="text-center text-sm text-muted-foreground">
-          Подключите устройство и начните заботу
+        </TouchableOpacity>
+        <Text className="text-center text-xs text-muted-foreground mt-3">
+          Подключите ESP32 и начните заботу о растениях
         </Text>
-      </View>
+      </Animated.View>
     </View>
   );
-}
+};

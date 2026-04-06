@@ -7,18 +7,13 @@ import { DevicesListSkeleton } from '@/components/devices-list-skeleton';
 import { BottomBar } from '@/components/bottom-bar';
 import { View } from 'react-native';
 
-const SCREEN_OPTIONS = {
-  title: 'usePlant',
-  headerTransparent: true,
-};
-
 export default function HomeScreen() {
   const { devices, loading } = useDevices();
 
   return (
     <>
-      <Stack.Screen options={SCREEN_OPTIONS} />
-      <View className='flex-1 bg-background p-6'>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View className='flex-1 bg-background px-5'>
         {loading
           ? <DevicesListSkeleton />
           : devices.length

@@ -5,6 +5,9 @@ export default function AppLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="device" />
+      <Stack.Screen name="profile" />
+      <Stack.Screen name="connect" />
+      <Stack.Screen name="settings" />
     </Stack>
   );
 }

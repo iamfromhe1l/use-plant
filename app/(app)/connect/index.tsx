@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, ScrollView, ActivityIndicator } from 'react-native';
+import { View, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Stack, router } from 'expo-router';
 import * as Network from 'expo-network';
 import { useDeviceLocal } from '@/contexts/device-local-context/device-local-context';
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ScreenHeader } from '@/components/screen-header';
 import { Wifi, Lock, Unlock, RefreshCw, ArrowLeft, Radio, X, Check, ChevronRight } from 'lucide-react-native';
 import { cn } from '@/lib/utils';
 
@@ -76,17 +77,13 @@ export default function ConnectDeviceScreen() {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: 'Подключение устройства',
-          headerLeft: () => (
-            <Button variant="ghost" size="sm" onPress={() => router.back()}>
-              <Icon as={ArrowLeft} size={24} />
-            </Button>
-          ),
-        }}
-      />
-      <ScrollView className="flex-1 pt-20 bg-background">
+      <Stack.Screen options={{ headerShown: false }} />
+      <ScreenHeader title="Подключение" subtitle="Подключите ESP32 к Wi-Fi" />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <ScrollView className="flex-1 bg-background" keyboardShouldPersistTaps="handled">
         <View className="p-6 gap-6">
           <View className="items-center gap-2">
             <View className="rounded-full bg-primary/10 p-4">
@@ -277,6 +274,7 @@ export default function ConnectDeviceScreen() {
           </View>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </>
   );
 }

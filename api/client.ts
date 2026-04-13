@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError, AxiosResponse } from 'axios';
 import type { IApiResponse, IApiError } from './types';
 
+const PRODUCTION_API_BASE_URL = 'http://72.56.240.75:4000';
 const FALLBACK_API_BASE_URL =
   Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
 
@@ -28,7 +29,10 @@ function getExpoLanApiBaseUrl() {
 }
 
 const API_BASE_URL =
-  Constants?.expoConfig?.extra?.apiBaseUrl || getExpoLanApiBaseUrl() || FALLBACK_API_BASE_URL;
+  Constants?.expoConfig?.extra?.apiBaseUrl ||
+  PRODUCTION_API_BASE_URL ||
+  getExpoLanApiBaseUrl() ||
+  FALLBACK_API_BASE_URL;
 
 export class ApiClient {
   private static token: string | null = null;

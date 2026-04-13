@@ -6,7 +6,29 @@ import type { IApiResponse, IApiError } from './types';
 const FALLBACK_API_BASE_URL =
   Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
 
-const API_BASE_URL = Constants?.expoConfig?.extra?.apiBaseUrl || FALLBACK_API_BASE_URL;
+function extractHost(value?: string | null) {
+  if (!value) return null;
+
+  const normalized = value
+    .replace(/^https?:\/\//, '')
+    .replace(/^exp:\/\//, '')
+    .replace(/^exps:\/\//, '')
+    .split('/')[0]
+    .split(':')[0];
+
+  return normalized || null;
+}
+
+function getExpoLanApiBaseUrl() {
+  const hostUri = Constants.expoConfig?.hostUri ?? Constants.platform?.hostUri;
+  const debuggerHost = (Constants.expoGoConfig as { debuggerHost?: string } | null)?.debuggerHost;
+  const host = extractHost(hostUri) ?? extractHost(debuggerHost);
+
+  return host ? `http://${host}:4000` : null;
+}
+
+const API_BASE_URL =
+  Constants?.expoConfig?.extra?.apiBaseUrl || getExpoLanApiBaseUrl() || FALLBACK_API_BASE_URL;
 
 export class ApiClient {
   private static token: string | null = null;

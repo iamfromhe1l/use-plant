@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import { View, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -9,8 +9,6 @@ import { useDevices } from '@/contexts/devices-context/devices-context';
 import { ICON_MAP } from '@/consts/icons';
 import { isDeviceOnline } from '@/lib/device-status';
 import * as Haptics from 'expo-haptics';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 function formatLastSeen(lastSeen: string) {
   const d = new Date(lastSeen);
@@ -24,7 +22,13 @@ function formatLastSeen(lastSeen: string) {
   return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 }
 
-export const DevicesList = () => {
+export const DevicesList = ({
+  refreshing = false,
+  onRefresh,
+}: {
+  refreshing?: boolean;
+  onRefresh?: () => void | Promise<void>;
+}) => {
   const { devices } = useDevices();
 
   const handleDevicePress = (deviceId: string) => {
@@ -33,7 +37,15 @@ export const DevicesList = () => {
   };
 
   return (
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#16a34a" />
+          ) : undefined
+        }
+      >
         <View className="gap-5">
           {devices.map((device, index) => {
             const IconComponent = ICON_MAP[device.icon] || Sprout;

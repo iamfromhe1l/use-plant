@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -17,7 +17,15 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/toast';
-import { RotateCcw, Info, Cpu, Wifi, AlertTriangle } from 'lucide-react-native';
+import {
+  RotateCcw,
+  Info,
+  Cpu,
+  Wifi,
+  AlertTriangle,
+  SlidersHorizontal,
+  ChevronRight,
+} from 'lucide-react-native';
 import { CommandsApi } from '@/api/devices/commands';
 import { useDevices } from '@/contexts/devices-context/devices-context';
 import * as Haptics from 'expo-haptics';
@@ -47,72 +55,101 @@ export default function DeviceSettingsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="bg-background flex-1">
       <ScreenHeader title="Настройки устройства" />
 
-      <View className="px-5 pt-4 gap-4">
-        {/* Device info */}
-        <Animated.View entering={FadeInDown.delay(50).springify()}>
-          <View className="bg-card rounded-3xl p-5 gap-3">
-            <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Информация</Text>
+      <View className="gap-4 px-5 pt-4">
+        <Animated.View entering={FadeInDown.delay(40).springify()}>
+          <View className="bg-card gap-3 rounded-3xl p-5">
+            <Text className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+              Информация
+            </Text>
 
             <View className="flex-row items-center gap-3">
               <View className="bg-primary/10 rounded-2xl p-2.5">
                 <Icon as={Cpu} size={18} className="text-primary" />
               </View>
               <View className="flex-1">
-                <Text className="text-xs text-muted-foreground">Название</Text>
-                <Text className="text-base font-semibold text-foreground">{device?.name || 'Устройство'}</Text>
+                <Text className="text-muted-foreground text-xs">Название</Text>
+                <Text className="text-foreground text-base font-semibold">
+                  {device?.name || 'Устройство'}
+                </Text>
               </View>
             </View>
 
-            <View className="h-px bg-border" />
+            <View className="bg-border h-px" />
 
             <View className="flex-row items-center gap-3">
-              <View className="bg-blue-500/10 rounded-2xl p-2.5">
+              <View className="rounded-2xl bg-blue-500/10 p-2.5">
                 <Icon as={Info} size={18} className="text-blue-500" />
               </View>
               <View className="flex-1">
-                <Text className="text-xs text-muted-foreground">ID устройства</Text>
-                <Text className="text-sm font-mono text-foreground">{deviceId}</Text>
+                <Text className="text-muted-foreground text-xs">ID устройства</Text>
+                <Text className="text-foreground font-mono text-sm">{deviceId}</Text>
               </View>
             </View>
 
-            <View className="h-px bg-border" />
+            <View className="bg-border h-px" />
 
             <View className="flex-row items-center gap-3">
-              <View className="bg-emerald-500/10 rounded-2xl p-2.5">
+              <View className="rounded-2xl bg-emerald-500/10 p-2.5">
                 <Icon as={Wifi} size={18} className="text-emerald-500" />
               </View>
               <View className="flex-1">
-                <Text className="text-xs text-muted-foreground">Растений</Text>
-                <Text className="text-base font-semibold text-foreground">{device?.plants.length || 0}</Text>
+                <Text className="text-muted-foreground text-xs">Растений</Text>
+                <Text className="text-foreground text-base font-semibold">
+                  {device?.plants.length || 0}
+                </Text>
               </View>
             </View>
           </View>
         </Animated.View>
 
-        {/* Danger zone */}
-        <Animated.View entering={FadeInDown.delay(150).springify()}>
+        <Animated.View entering={FadeInDown.delay(90).springify()}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push(`/(app)/device/telemetry-status/${deviceId}`)}>
+            <View className="bg-card flex-row items-center gap-3 rounded-3xl p-5">
+              <View className="bg-primary/10 rounded-2xl p-3">
+                <Icon as={SlidersHorizontal} size={20} className="text-primary" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-foreground text-base font-semibold">Шкала статусов</Text>
+                <Text className="text-muted-foreground mt-1 text-sm">
+                  Пороги оценки телеметрии для каждого растения
+                </Text>
+              </View>
+              <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(140).springify()}>
           <View className="bg-card rounded-3xl p-5">
-            <View className="flex-row items-center gap-2 mb-3">
+            <View className="mb-3 flex-row items-center gap-2">
               <Icon as={AlertTriangle} size={16} className="text-destructive" />
-              <Text className="text-xs font-semibold text-destructive uppercase tracking-wider">Опасная зона</Text>
+              <Text className="text-destructive text-xs font-semibold tracking-wider uppercase">
+                Опасная зона
+              </Text>
             </View>
 
-            <Text className="text-sm text-muted-foreground mb-4">
-              Сброс устройства удалит все настройки Wi-Fi и сохранённые данные. Устройство вернётся к заводскому состоянию.
+            <Text className="text-muted-foreground mb-4 text-sm">
+              Сброс устройства удалит все настройки Wi-Fi и сохранённые данные. Устройство вернётся
+              к заводскому состоянию.
             </Text>
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <TouchableOpacity
-                  disabled={resetting}
-                  activeOpacity={0.8}
-                >
-                  <View className={`rounded-2xl py-4 flex-row items-center justify-center gap-2 ${resetting ? 'bg-muted' : 'bg-destructive/10'}`}>
-                    <Icon as={RotateCcw} size={16} className={resetting ? 'text-muted-foreground' : 'text-destructive'} />
-                    <Text className={`text-base font-semibold ${resetting ? 'text-muted-foreground' : 'text-destructive'}`}>
+                <TouchableOpacity disabled={resetting} activeOpacity={0.8}>
+                  <View
+                    className={`flex-row items-center justify-center gap-2 rounded-2xl py-4 ${resetting ? 'bg-muted' : 'bg-destructive/10'}`}>
+                    <Icon
+                      as={RotateCcw}
+                      size={16}
+                      className={resetting ? 'text-muted-foreground' : 'text-destructive'}
+                    />
+                    <Text
+                      className={`text-base font-semibold ${resetting ? 'text-muted-foreground' : 'text-destructive'}`}>
                       {resetting ? 'Сброс...' : 'Сбросить устройство'}
                     </Text>
                   </View>
@@ -124,9 +161,7 @@ export default function DeviceSettingsScreen() {
                     <Text>Сброс устройства</Text>
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    <Text>
-                      Устройство будет перезагружено и сброшено к заводским настройкам.
-                    </Text>
+                    <Text>Устройство будет перезагружено и сброшено к заводским настройкам.</Text>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

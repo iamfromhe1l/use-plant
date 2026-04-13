@@ -1,7 +1,31 @@
+export type ITelemetryStatusLevel = 'poor' | 'moderate' | 'normal' | 'good' | 'excellent';
+
+export interface ITelemetryMetricThresholds {
+  low: {
+    poor: number;
+    moderate: number;
+    normal: number;
+    good: number;
+  };
+  high: {
+    good: number;
+    normal: number;
+    moderate: number;
+    poor: number;
+  };
+}
+
+export interface IPlantTelemetryStatusConfig {
+  temperature: ITelemetryMetricThresholds;
+  airHumidity: ITelemetryMetricThresholds;
+  soilMoisture: ITelemetryMetricThresholds;
+}
+
 export interface IPlant {
   index: number;
   name: string;
   icon: string;
+  telemetryStatusConfig: IPlantTelemetryStatusConfig;
 }
 
 export interface IDevice {

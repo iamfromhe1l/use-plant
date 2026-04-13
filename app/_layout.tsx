@@ -9,31 +9,32 @@ import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useUniwind } from 'uniwind';
 
-export {
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
 export default function RootLayout() {
   const { theme } = useUniwind();
 
   return (
-    <AuthProvider>
-      <DevicesProvider>
-        <DeviceLocalProvider>
-          <ThemeProvider value={NAV_THEME[theme ?? 'light']}>
-            <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-            <Stack>
-              <Stack.Screen options={{ headerShown: false }} name="index" />
-              <Stack.Screen options={{ headerShown: false }} name="(auth)" />
-              <Stack.Screen options={{ headerShown: false }} name="(app)" />
-            </Stack>
-            <Toaster />
-            <PortalHost />
-          </ThemeProvider>
-        </DeviceLocalProvider>
-      </DevicesProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <DevicesProvider>
+          <DeviceLocalProvider>
+            <ThemeProvider value={NAV_THEME[theme ?? 'light']}>
+              <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+              <Stack>
+                <Stack.Screen options={{ headerShown: false }} name="index" />
+                <Stack.Screen options={{ headerShown: false }} name="(auth)" />
+                <Stack.Screen options={{ headerShown: false }} name="(app)" />
+              </Stack>
+              <Toaster />
+              <PortalHost />
+            </ThemeProvider>
+          </DeviceLocalProvider>
+        </DevicesProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

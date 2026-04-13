@@ -57,7 +57,8 @@ import { useDevices } from '@/contexts/devices-context/devices-context';
 import {
   describeWateringCondition,
   getWateringConditionsStorageKey,
-  WATERING_DAY_LABELS,
+  sortWateringDays,
+  WATERING_DAY_OPTIONS,
   WATERING_SENSOR_UNITS,
 } from '@/lib/watering-conditions';
 
@@ -117,8 +118,11 @@ function clampValue(value: number, field: SensorField) {
 }
 
 function sameDays(left: number[], right: number[]) {
-  if (left.length !== right.length) return false;
-  return left.every((day, index) => day === right[index]);
+  const normalizedLeft = sortWateringDays(left);
+  const normalizedRight = sortWateringDays(right);
+
+  if (normalizedLeft.length !== normalizedRight.length) return false;
+  return normalizedLeft.every((day, index) => day === normalizedRight[index]);
 }
 
 function describeRule(rule: ISensorRule) {
@@ -388,7 +392,7 @@ export default function ConditionsScreen() {
 
         const days = condition.schedule.days.includes(day)
           ? condition.schedule.days.filter((value) => value !== day)
-          : [...condition.schedule.days, day].sort();
+          : sortWateringDays([...condition.schedule.days, day]);
 
         return {
           ...condition,
@@ -405,7 +409,7 @@ export default function ConditionsScreen() {
         condition.id === conditionId && condition.schedule
           ? {
               ...condition,
-              schedule: { ...condition.schedule, days },
+              schedule: { ...condition.schedule, days: sortWateringDays(days) },
             }
           : condition
       )
@@ -852,14 +856,14 @@ export default function ConditionsScreen() {
                               Дни недели
                             </Text>
                             <View className="flex-row flex-wrap gap-2">
-                              {WATERING_DAY_LABELS.map((label, dayIndex) => {
-                                const isActive = condition.schedule?.days.includes(dayIndex);
+                              {WATERING_DAY_OPTIONS.map(({ label, value }) => {
+                                const isActive = condition.schedule?.days.includes(value);
 
                                 return (
                                   <TouchableOpacity
-                                    key={label}
+                                    key={value}
                                     activeOpacity={0.85}
-                                    onPress={() => toggleDay(condition.id, dayIndex)}
+                                    onPress={() => toggleDay(condition.id, value)}
                                     style={{ width: '23%' }}
                                   >
                                     <View

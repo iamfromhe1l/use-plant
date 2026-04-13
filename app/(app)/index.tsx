@@ -5,7 +5,7 @@ import { useDevices } from '@/contexts/devices-context/devices-context';
 import { DevicesList } from '@/components/devices-list';
 import { DevicesListSkeleton } from '@/components/devices-list-skeleton';
 import { BottomBar } from '@/components/bottom-bar';
-import { TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native';
 import { ScreenHeader } from '@/components/screen-header';
 import { Icon } from '@/components/ui/icon';
 import { Plus } from 'lucide-react-native';
@@ -13,13 +13,23 @@ import { isDeviceOnline } from '@/lib/device-status';
 import * as Haptics from 'expo-haptics';
 
 export default function HomeScreen() {
-  const { devices, loading } = useDevices();
+  const { devices, loading, actions } = useDevices();
+  const [refreshing, setRefreshing] = React.useState(false);
   const onlineCount = devices.filter((device) => isDeviceOnline(device.lastSeen)).length;
 
   const handleAddDevice = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/(app)/connect');
   };
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await actions.loadDevices();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [actions]);
 
   return (
     <>
@@ -39,8 +49,18 @@ export default function HomeScreen() {
           {loading
             ? <DevicesListSkeleton />
             : devices.length
-              ? <DevicesList />
-              : <Welcome />
+              ? <DevicesList refreshing={refreshing} onRefresh={onRefresh} />
+              : (
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ flexGrow: 1, paddingBottom: 120 }}
+                  refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#16a34a" />
+                  }
+                >
+                  <Welcome />
+                </ScrollView>
+              )
           }
         </View>
         <BottomBar />

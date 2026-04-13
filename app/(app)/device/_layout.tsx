@@ -7,6 +7,10 @@ export default function DeviceLayout() {
       <Stack.Screen name="report/[deviceId]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="watering-report/[deviceId]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="settings/[deviceId]" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen
+        name="telemetry-status/[deviceId]"
+        options={{ animation: 'slide_from_right' }}
+      />
       <Stack.Screen name="conditions/[deviceId]" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );

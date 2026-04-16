@@ -16,5 +16,6 @@ export interface IWateringRecord {
   userId: string;
   plantIndex: number;
   level: number;
+  source: 'manual' | 'condition_sensor' | 'condition_schedule';
   wateredAt: string;
 }

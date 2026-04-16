@@ -1,14 +1,21 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { router } from 'expo-router';
-import { Leaf, Calendar, Droplets, Sprout, Plus, Zap } from 'lucide-react-native';
+import { Leaf, Calendar, Droplets, Plus, Zap, type LucideIcon } from 'lucide-react-native';
 import * as React from 'react';
 import { TouchableOpacity, View } from 'react-native';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
-function FeatureRow({ icon, bg, color, title, subtitle, delay }: {
-  icon: React.ComponentType<any>;
+function FeatureRow({
+  icon,
+  bg,
+  color,
+  title,
+  subtitle,
+  delay,
+}: {
+  icon: LucideIcon;
   bg: string;
   color: string;
   title: string;
@@ -17,13 +24,13 @@ function FeatureRow({ icon, bg, color, title, subtitle, delay }: {
 }) {
   return (
     <Animated.View entering={FadeInDown.delay(delay).springify()}>
-      <View className="bg-card rounded-3xl p-4 flex-row items-center gap-4">
+      <View className="bg-card flex-row items-center gap-4 rounded-3xl p-4">
         <View className={`${bg} rounded-2xl p-3`}>
           <Icon as={icon} size={22} className={color} />
         </View>
         <View className="flex-1">
-          <Text className="text-base font-semibold text-foreground">{title}</Text>
-          <Text className="text-sm text-muted-foreground mt-0.5">{subtitle}</Text>
+          <Text className="text-foreground text-base font-semibold">{title}</Text>
+          <Text className="text-muted-foreground mt-0.5 text-sm">{subtitle}</Text>
         </View>
       </View>
     </Animated.View>
@@ -40,12 +47,12 @@ export const Welcome = () => {
     <View className="flex-1 justify-center gap-5">
       {/* Hero */}
       <Animated.View entering={FadeIn.delay(50)} className="items-center gap-3 py-4">
-        <View className="bg-primary/10 rounded-full p-8 mb-1">
+        <View className="bg-primary/10 mb-1 rounded-full p-8">
           <Icon as={Leaf} size={56} className="text-primary" />
         </View>
-        <Text className="text-4xl font-extrabold text-foreground">usePlant</Text>
-        <Text className="text-center text-base text-muted-foreground px-6">
-          Умный уход за растениями — полив, мониторинг и расписание в одном месте
+        <Text className="text-foreground text-4xl font-extrabold">usePlant</Text>
+        <Text className="text-muted-foreground px-6 text-center text-base">
+          Умный уход за растениями — полив, контроль и расписание в одном месте
         </Text>
       </Animated.View>
 
@@ -80,13 +87,13 @@ export const Welcome = () => {
       {/* CTA */}
       <Animated.View entering={FadeInDown.delay(380).springify()}>
         <TouchableOpacity onPress={handleAddPlant} activeOpacity={0.85}>
-          <View className="bg-primary rounded-3xl py-4 flex-row items-center justify-center gap-2">
+          <View className="bg-primary flex-row items-center justify-center gap-2 rounded-3xl py-4">
             <Icon as={Plus} size={20} className="text-primary-foreground" />
-            <Text className="text-base font-bold text-primary-foreground">Добавить устройство</Text>
+            <Text className="text-primary-foreground text-base font-bold">Добавить устройство</Text>
           </View>
         </TouchableOpacity>
-        <Text className="text-center text-xs text-muted-foreground mt-3">
-          Подключите ESP32 и начните заботу о растениях
+        <Text className="text-muted-foreground mt-3 text-center text-xs">
+          Подключите устройство и начните заботу о растениях
         </Text>
       </Animated.View>
     </View>

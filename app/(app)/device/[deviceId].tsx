@@ -83,6 +83,8 @@ export default function DeviceScreen() {
   const [waterLevels, setWaterLevels] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const [headerSliderWidth, setHeaderSliderWidth] = useState(0);
+  const [manualCooldownUntil, setManualCooldownUntil] = useState<Record<number, number>>({});
+  const [cooldownNow, setCooldownNow] = useState(Date.now());
 
   const scrollY = useSharedValue(0);
   const selectedPlantIndexValue = useSharedValue(0);
@@ -102,6 +104,14 @@ export default function DeviceScreen() {
     setWaterLevels(levels);
   }, [plants.length]);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setCooldownNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
   const fetchData = useCallback(async () => {
     const [telRes, waterRes] = await Promise.all([
       telemetryApi.getLatestTelemetry(deviceId),
@@ -120,12 +130,21 @@ export default function DeviceScreen() {
       const storedConditions = await AsyncStorage.getItem(
         getWateringConditionsStorageKey(deviceId)
       );
-      const parsedConditions = storedConditions ? JSON.parse(storedConditions) : [];
-      setConditions(Array.isArray(parsedConditions) ? parsedConditions : []);
+      if (storedConditions) {
+        const parsedConditions = JSON.parse(storedConditions);
+        setConditions(Array.isArray(parsedConditions) ? parsedConditions : []);
+        return;
+      }
+
+      const fallbackConditions =
+        device?.plants.flatMap((plant) => plant.wateringConditions || []) ?? [];
+      setConditions(fallbackConditions);
     } catch {
-      setConditions([]);
+      const fallbackConditions =
+        device?.plants.flatMap((plant) => plant.wateringConditions || []) ?? [];
+      setConditions(fallbackConditions);
     }
-  }, [deviceId]);
+  }, [device?.plants, deviceId]);
 
   useEffect(() => {
     void loadConditions();
@@ -156,6 +175,16 @@ export default function DeviceScreen() {
     const plantIndex = plant.index;
     const cmdType = plantIndex === 1 ? 'water_plant_1' : 'water_plant_2';
     const level = waterLevels[plantIndex] || 5;
+    const cooldownLeft = Math.max(
+      0,
+      Math.ceil(((manualCooldownUntil[plantIndex] || 0) - Date.now()) / 1000)
+    );
+
+    if (cooldownLeft > 0) {
+      toast.error(`Подожди ${cooldownLeft} сек перед следующим поливом`);
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSendingCommand(cmdType as CommandType);
     const response = await commandsApi.sendCommand(deviceId, {
@@ -165,6 +194,10 @@ export default function DeviceScreen() {
     setSendingCommand(null);
     if (response.state) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setManualCooldownUntil((prev) => ({
+        ...prev,
+        [plantIndex]: Date.now() + 10000,
+      }));
       toast.success(`Команда полива для ${plant.name} отправлена`);
       fetchData();
     } else {
@@ -521,6 +554,10 @@ export default function DeviceScreen() {
                   const pageLevel = waterLevels[plant.index] || 5;
                   const pageCommandType = plant.index === 1 ? 'water_plant_1' : 'water_plant_2';
                   const pageIsSending = sendingCommand === pageCommandType;
+                  const pageCooldownLeft = Math.max(
+                    0,
+                    Math.ceil(((manualCooldownUntil[plant.index] || 0) - cooldownNow) / 1000)
+                  );
                   const pageTelemetryConfig = getPlantTelemetryConfig(plant);
 
                   return (
@@ -679,10 +716,12 @@ export default function DeviceScreen() {
 
                         <TouchableOpacity
                           className={`mt-4 flex-row items-center justify-center gap-2 rounded-2xl py-4 ${
-                            sendingCommand !== null ? 'bg-muted' : 'bg-primary'
+                            sendingCommand !== null || pageCooldownLeft > 0
+                              ? 'bg-muted'
+                              : 'bg-primary'
                           }`}
                           onPress={() => handleWater(plant)}
-                          disabled={sendingCommand !== null}
+                          disabled={sendingCommand !== null || pageCooldownLeft > 0}
                           activeOpacity={0.85}>
                           <Icon
                             as={pageIsSending ? Zap : Droplets}
@@ -690,7 +729,11 @@ export default function DeviceScreen() {
                             className="text-primary-foreground"
                           />
                           <Text className="text-primary-foreground text-base font-semibold">
-                            {pageIsSending ? 'Полив...' : `Полить ${plant.name}`}
+                            {pageIsSending
+                              ? 'Полив...'
+                              : pageCooldownLeft > 0
+                                ? `Подождать ${pageCooldownLeft} сек`
+                                : `Полить ${plant.name}`}
                           </Text>
                         </TouchableOpacity>
                       </View>

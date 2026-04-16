@@ -63,13 +63,13 @@ export default function ConnectDeviceScreen() {
 
       toast.error(
         automatic
-          ? 'Автопоиск не нашёл устройство. Подключитесь к сети PlantWatering-ESP32 и вернитесь в приложение, поиск повторится автоматически.'
+          ? 'Автопоиск не нашёл устройство. Подключитесь к сети настройки «PlantWatering-ESP32» и вернитесь в приложение, поиск повторится автоматически.'
           : 'Устройство не найдено. Убедитесь, что телефон подключен к Wi‑Fi сети устройства.'
       );
     } catch {
       toast.error(
         automatic
-          ? 'Не удалось автоматически найти устройство. Проверьте подключение к сети PlantWatering-ESP32.'
+          ? 'Не удалось автоматически найти устройство. Проверьте подключение к сети настройки «PlantWatering-ESP32».'
           : 'Ошибка при поиске устройства'
       );
     } finally {
@@ -108,7 +108,7 @@ export default function ConnectDeviceScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <ScreenHeader title="Подключение" subtitle="Подключите ESP32 к Wi-Fi" />
+      <ScreenHeader title="Подключение" subtitle="Подключите устройство к домашней сети" />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -137,7 +137,7 @@ export default function ConnectDeviceScreen() {
                     1. Откройте настройки Wi-Fi на телефоне
                   </Text>
                   <Text className="text-sm text-muted-foreground">
-                    2. Подключитесь к сети устройства (PlantWatering-ESP32)
+                    2. Подключитесь к сети настройки устройства «PlantWatering-ESP32»
                   </Text>
                   <Text className="text-sm text-muted-foreground">
                     3. Вернитесь в приложение и нажмите "Найти устройство"

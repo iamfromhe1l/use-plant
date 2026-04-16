@@ -1,3 +1,5 @@
+import type { IWateringCondition } from '@/api/devices/types/conditions';
+
 export type ITelemetryStatusLevel = 'poor' | 'moderate' | 'normal' | 'good' | 'excellent';
 
 export interface ITelemetryMetricThresholds {
@@ -25,6 +27,8 @@ export interface IPlant {
   index: number;
   name: string;
   icon: string;
+  presetId: string | null;
+  wateringConditions: IWateringCondition[];
   telemetryStatusConfig: IPlantTelemetryStatusConfig;
 }
 
@@ -35,5 +39,6 @@ export interface IDevice {
   lastSeen: string;
   name: string;
   icon: string;
+  telemetryIntervalMinutes: number;
   plants: IPlant[];
 }

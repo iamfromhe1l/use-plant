@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, Switch as RNSwitch, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { CommandsApi } from '@/api/devices/commands';
+import { DevicesApi } from '@/api/devices/devices';
 import type {
   ComparisonOperator,
   ISensorRule,
@@ -57,12 +58,14 @@ import { useDevices } from '@/contexts/devices-context/devices-context';
 import {
   describeWateringCondition,
   getWateringConditionsStorageKey,
+  normalizeScheduleTimes,
   sortWateringDays,
   WATERING_DAY_OPTIONS,
   WATERING_SENSOR_UNITS,
 } from '@/lib/watering-conditions';
 
 const commandsApi = new CommandsApi();
+const devicesApi = new DevicesApi();
 
 const SENSOR_OPTIONS: {
   value: SensorField;
@@ -100,6 +103,7 @@ const DAY_PRESETS = [
 let nextId = 1;
 const generateId = () => `cond_${Date.now()}_${nextId++}`;
 const MAX_SENSOR_INTERVAL_MINUTES = 360;
+const MAX_SCHEDULE_TIMES = 6;
 
 function formatInterval(minutes: number) {
   if (minutes < 60) return `${minutes} мин`;
@@ -125,9 +129,28 @@ function sameDays(left: number[], right: number[]) {
   return normalizedLeft.every((day, index) => day === normalizedRight[index]);
 }
 
+function normalizeConditionShape(condition: IWateringCondition): IWateringCondition {
+  if (condition.type !== 'schedule' || !condition.schedule) {
+    return condition;
+  }
+
+  const times = normalizeScheduleTimes(condition.schedule).slice(0, MAX_SCHEDULE_TIMES);
+
+  return {
+    ...condition,
+    schedule: {
+      ...condition.schedule,
+      time: times[0] ?? '08:00',
+      times,
+    },
+  };
+}
+
 function describeRule(rule: ISensorRule) {
-  const sensorLabel = SENSOR_OPTIONS.find((option) => option.value === rule.field)?.label ?? 'Датчик';
-  const operatorLabel = OP_OPTIONS.find((option) => option.value === rule.operator)?.label.toLowerCase() ?? '';
+  const sensorLabel =
+    SENSOR_OPTIONS.find((option) => option.value === rule.field)?.label ?? 'Датчик';
+  const operatorLabel =
+    OP_OPTIONS.find((option) => option.value === rule.operator)?.label.toLowerCase() ?? '';
   return `${sensorLabel} ${operatorLabel} ${rule.value}${WATERING_SENSOR_UNITS[rule.field]}`;
 }
 
@@ -145,12 +168,9 @@ function ChoiceChip({
   return (
     <TouchableOpacity className="flex-1" activeOpacity={0.85} onPress={onPress}>
       <View
-        className={`rounded-2xl px-3 py-3 items-center justify-center gap-1.5 border ${
-          active
-            ? 'bg-primary border-primary'
-            : 'bg-secondary/45 border-border/70'
-        }`}
-      >
+        className={`items-center justify-center gap-1.5 rounded-2xl border px-3 py-3 ${
+          active ? 'bg-primary border-primary' : 'bg-secondary/45 border-border/70'
+        }`}>
         {icon ? (
           <Icon
             as={icon}
@@ -161,8 +181,7 @@ function ChoiceChip({
         <Text
           className={`text-xs font-semibold ${
             active ? 'text-primary-foreground' : 'text-foreground'
-          }`}
-        >
+          }`}>
           {label}
         </Text>
       </View>
@@ -189,12 +208,12 @@ function AddConditionCard({
     <TouchableOpacity activeOpacity={0.88} onPress={onPress}>
       <View className={`rounded-3xl border p-4 ${containerClassName}`}>
         <View className="flex-row items-center gap-3">
-          <View className="rounded-2xl bg-background/70 p-3">
+          <View className="bg-background/70 rounded-2xl p-3">
             <Icon as={icon} size={20} className={iconClassName} />
           </View>
           <View className="flex-1">
-            <Text className="text-base font-semibold text-foreground">{title}</Text>
-            <Text className="text-sm text-muted-foreground mt-1">{description}</Text>
+            <Text className="text-foreground text-base font-semibold">{title}</Text>
+            <Text className="text-muted-foreground mt-1 text-sm">{description}</Text>
           </View>
           <Icon as={Plus} size={18} className={iconClassName} />
         </View>
@@ -208,18 +227,22 @@ export default function ConditionsScreen() {
     deviceId: string;
     plantIndex?: string;
   }>();
-  const { devices } = useDevices();
+  const { devices, actions } = useDevices();
   const device = devices.find((item) => item.deviceId === deviceId);
   const plants = device?.plants || [];
   const selectedPlantIndex = Number(plantIndexParam || plants[0]?.index || 1);
-  const selectedPlant = plants.find((plant) => plant.index === selectedPlantIndex) || plants[0] || null;
-  const PlantIcon = selectedPlant ? (ICON_MAP[selectedPlant.icon] || Leaf) : Leaf;
+  const selectedPlant =
+    plants.find((plant) => plant.index === selectedPlantIndex) || plants[0] || null;
+  const PlantIcon = selectedPlant ? ICON_MAP[selectedPlant.icon] || Leaf : Leaf;
   const storageKey = getWateringConditionsStorageKey(deviceId);
 
   const [conditions, setConditions] = useState<IWateringCondition[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [sending, setSending] = useState(false);
-  const [timePickerFor, setTimePickerFor] = useState<string | null>(null);
+  const [timePickerFor, setTimePickerFor] = useState<{
+    conditionId: string;
+    timeIndex: number;
+  } | null>(null);
   const [tempPickerTime, setTempPickerTime] = useState<Date | null>(null);
   const [intervalDialogFor, setIntervalDialogFor] = useState<string | null>(null);
   const [tempInterval, setTempInterval] = useState(60);
@@ -235,13 +258,21 @@ export default function ConditionsScreen() {
 
         if (storedConditions) {
           const parsed = JSON.parse(storedConditions);
-          setConditions(Array.isArray(parsed) ? parsed : []);
+          setConditions(
+            (Array.isArray(parsed) ? parsed : []).map((condition) =>
+              normalizeConditionShape(condition)
+            )
+          );
         } else {
-          setConditions([]);
+          const fallbackConditions =
+            device?.plants.flatMap((plant) => plant.wateringConditions || []) ?? [];
+          setConditions(fallbackConditions.map((condition) => normalizeConditionShape(condition)));
         }
       } catch {
         if (active) {
-          setConditions([]);
+          const fallbackConditions =
+            device?.plants.flatMap((plant) => plant.wateringConditions || []) ?? [];
+          setConditions(fallbackConditions.map((condition) => normalizeConditionShape(condition)));
         }
       } finally {
         if (active) {
@@ -255,7 +286,7 @@ export default function ConditionsScreen() {
     return () => {
       active = false;
     };
-  }, [storageKey]);
+  }, [storageKey, device?.plants]);
 
   useEffect(() => {
     if (!draftLoaded) return;
@@ -307,7 +338,8 @@ export default function ConditionsScreen() {
         type: 'schedule',
         level: 5,
         interval: 0,
-        schedule: { time: '08:00', days: [1, 2, 3, 4, 5] },
+        rules: [],
+        schedule: { time: '08:00', times: ['08:00'], days: [1, 2, 3, 4, 5] },
         enabled: true,
       },
     ]);
@@ -368,6 +400,52 @@ export default function ConditionsScreen() {
             }
           : condition
       )
+    );
+  };
+
+  const addScheduleTime = (conditionId: string) => {
+    Haptics.selectionAsync();
+    setConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId || !condition.schedule) return condition;
+
+        const times = normalizeScheduleTimes(condition.schedule);
+        if (times.length >= MAX_SCHEDULE_TIMES) return condition;
+
+        const nextTimes = [...times, times[times.length - 1] || '08:00'];
+
+        return {
+          ...condition,
+          schedule: {
+            ...condition.schedule,
+            time: nextTimes[0],
+            times: nextTimes,
+          },
+        };
+      })
+    );
+  };
+
+  const removeScheduleTime = (conditionId: string, timeIndex: number) => {
+    Haptics.selectionAsync();
+    setConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId || !condition.schedule) return condition;
+
+        const nextTimes = normalizeScheduleTimes(condition.schedule).filter(
+          (_, index) => index !== timeIndex
+        );
+        const safeTimes = nextTimes.length ? nextTimes : ['08:00'];
+
+        return {
+          ...condition,
+          schedule: {
+            ...condition.schedule,
+            time: safeTimes[0],
+            times: safeTimes,
+          },
+        };
+      })
     );
   };
 
@@ -432,8 +510,29 @@ export default function ConditionsScreen() {
     setSending(false);
 
     if (response.state) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.success(`Условия для ${selectedPlant.name} отправлены на устройство`);
+      const settingsResponse = await devicesApi.updateDeviceSettings({
+        deviceId,
+        plants: [
+          {
+            plantIndex: selectedPlantIndex,
+            presetId: null,
+            wateringConditions: plantConditions,
+          },
+        ],
+      });
+
+      if (settingsResponse.state) {
+        await actions.loadDevices();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        toast.success(`Условия для ${selectedPlant.name} отправлены на устройство`);
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        toast.error(
+          settingsResponse.error?.message ||
+            'Условия отправлены на устройство, но не сохранены в приложении'
+        );
+      }
+
       return;
     }
 
@@ -441,35 +540,41 @@ export default function ConditionsScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   };
 
-  const openTimePicker = (conditionId: string) => {
+  const openTimePicker = (conditionId: string, timeIndex: number) => {
     const condition = conditions.find((item) => item.id === conditionId);
-    const [hours, minutes] = (condition?.schedule?.time || '08:00').split(':').map(Number);
+    const scheduleTimes = normalizeScheduleTimes(condition?.schedule);
+    const [hours, minutes] = (scheduleTimes[timeIndex] || '08:00').split(':').map(Number);
     const date = new Date();
     date.setHours(hours, minutes, 0, 0);
     setTempPickerTime(date);
-    setTimePickerFor(conditionId);
+    setTimePickerFor({ conditionId, timeIndex });
   };
 
-  const applyTimePick = (conditionId: string, date: Date) => {
+  const applyTimePick = (conditionId: string, timeIndex: number, date: Date) => {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
+    const currentSchedule =
+      conditions.find((condition) => condition.id === conditionId)?.schedule || null;
+    const nextTimes = [...normalizeScheduleTimes(currentSchedule)];
+    nextTimes[timeIndex] = `${hours}:${minutes}`;
 
     updateCondition(conditionId, {
       schedule: {
-        ...conditions.find((condition) => condition.id === conditionId)?.schedule!,
-        time: `${hours}:${minutes}`,
+        ...currentSchedule!,
+        time: nextTimes[0],
+        times: nextTimes,
       },
     });
   };
 
   const onTimePick = (_: unknown, selected?: Date) => {
     if (Platform.OS === 'android') {
-      const targetConditionId = timePickerFor;
+      const targetTimePicker = timePickerFor;
       setTimePickerFor(null);
       setTempPickerTime(null);
 
-      if (selected && targetConditionId) {
-        applyTimePick(targetConditionId, selected);
+      if (selected && targetTimePicker) {
+        applyTimePick(targetTimePicker.conditionId, targetTimePicker.timeIndex, selected);
       }
 
       return;
@@ -482,7 +587,7 @@ export default function ConditionsScreen() {
 
   const confirmTimePick = () => {
     if (timePickerFor && tempPickerTime) {
-      applyTimePick(timePickerFor, tempPickerTime);
+      applyTimePick(timePickerFor.conditionId, timePickerFor.timeIndex, tempPickerTime);
     }
 
     setTimePickerFor(null);
@@ -510,7 +615,7 @@ export default function ConditionsScreen() {
 
   if (!selectedPlant) {
     return (
-      <View className="flex-1 bg-background">
+      <View className="bg-background flex-1">
         <ScreenHeader title="Условия полива" subtitle={device?.name || 'Устройство'} />
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-muted-foreground">Нет растений для настройки</Text>
@@ -520,14 +625,16 @@ export default function ConditionsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="bg-background flex-1">
       <ScreenHeader
         title="Условия полива"
         subtitle={`${device?.name || 'Устройство'} • ${selectedPlant.name}`}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 136 }}>
-        <View className="px-5 pt-4 gap-4">
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 136 }}>
+        <View className="gap-4 px-5 pt-4">
           <Animated.View entering={FadeInDown.delay(40).springify()} className="gap-3">
             <AddConditionCard
               title="Правило по датчикам"
@@ -553,14 +660,14 @@ export default function ConditionsScreen() {
               <Skeleton className="h-40 rounded-3xl" />
             </View>
           ) : plantConditions.length === 0 ? (
-            <Animated.View entering={FadeIn} className="bg-card rounded-3xl p-8 items-center gap-3">
+            <Animated.View entering={FadeIn} className="bg-card items-center gap-3 rounded-3xl p-8">
               <View className="bg-primary/10 rounded-full p-4">
                 <Icon as={PlantIcon} size={30} className="text-primary" />
               </View>
-              <Text className="text-base font-semibold text-foreground">
+              <Text className="text-foreground text-base font-semibold">
                 Для {selectedPlant.name} пока нет условий
               </Text>
-              <Text className="text-sm text-muted-foreground text-center">
+              <Text className="text-muted-foreground text-center text-sm">
                 Добавьте правило по датчикам или расписание выше. Все изменения сохраняются как
                 черновик и не затрагивают второе растение.
               </Text>
@@ -572,20 +679,17 @@ export default function ConditionsScreen() {
               return (
                 <Animated.View
                   key={condition.id}
-                  entering={FadeInDown.delay(100 + conditionIndex * 60).springify()}
-                >
-                  <View className="bg-card rounded-3xl overflow-hidden">
+                  entering={FadeInDown.delay(100 + conditionIndex * 60).springify()}>
+                  <View className="bg-card overflow-hidden rounded-3xl">
                     <View
-                      className={`px-4 py-4 border-b border-border/50 ${
+                      className={`border-border/50 border-b px-4 py-4 ${
                         isSensor ? 'bg-sky-500/6' : 'bg-violet-500/6'
-                      }`}
-                    >
+                      }`}>
                       <View className="flex-row items-start gap-3">
                         <View
                           className={`rounded-2xl p-2.5 ${
                             isSensor ? 'bg-sky-500/14' : 'bg-violet-500/14'
-                          }`}
-                        >
+                          }`}>
                           <Icon
                             as={isSensor ? Droplets : Clock}
                             size={18}
@@ -594,10 +698,10 @@ export default function ConditionsScreen() {
                         </View>
 
                         <View className="flex-1">
-                          <Text className="text-base font-semibold text-foreground">
+                          <Text className="text-foreground text-base font-semibold">
                             {isSensor ? 'Полив по датчикам' : 'Полив по расписанию'}
                           </Text>
-                          <Text className="text-sm text-muted-foreground mt-1">
+                          <Text className="text-muted-foreground mt-1 text-sm">
                             {describeWateringCondition(condition)}
                           </Text>
                         </View>
@@ -605,9 +709,11 @@ export default function ConditionsScreen() {
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <TouchableOpacity activeOpacity={0.85}>
-                              <View className="bg-destructive/8 rounded-2xl px-3 py-2 flex-row items-center gap-1.5">
+                              <View className="bg-destructive/8 flex-row items-center gap-1.5 rounded-2xl px-3 py-2">
                                 <Icon as={Trash2} size={14} className="text-destructive" />
-                                <Text className="text-sm font-medium text-destructive">Удалить</Text>
+                                <Text className="text-destructive text-sm font-medium">
+                                  Удалить
+                                </Text>
                               </View>
                             </TouchableOpacity>
                           </AlertDialogTrigger>
@@ -635,14 +741,13 @@ export default function ConditionsScreen() {
                       <TouchableOpacity
                         activeOpacity={0.85}
                         onPress={() => setConditionEnabled(condition.id, !condition.enabled)}
-                        className="mt-4"
-                      >
-                        <View className="bg-background rounded-2xl px-4 py-3 flex-row items-center">
+                        className="mt-4">
+                        <View className="bg-background flex-row items-center rounded-2xl px-4 py-3">
                           <View className="flex-1">
-                            <Text className="text-sm font-semibold text-foreground">
+                            <Text className="text-foreground text-sm font-semibold">
                               {condition.enabled ? 'Условие включено' : 'Условие выключено'}
                             </Text>
-                            <Text className="text-xs text-muted-foreground mt-1">
+                            <Text className="text-muted-foreground mt-1 text-xs">
                               Выключенное условие сохранится, но не отправится на устройство
                             </Text>
                           </View>
@@ -656,16 +761,16 @@ export default function ConditionsScreen() {
                       </TouchableOpacity>
                     </View>
 
-                    <View className="px-4 py-4 gap-4">
+                    <View className="gap-4 px-4 py-4">
                       <View>
-                        <Text className="text-xs font-medium text-muted-foreground mb-2">
+                        <Text className="text-muted-foreground mb-2 text-xs font-medium">
                           Интенсивность полива
                         </Text>
                         <View className="bg-secondary/30 rounded-2xl p-4">
-                          <View className="flex-row items-center justify-between mb-3">
-                            <Text className="text-sm text-foreground">Уровень</Text>
+                          <View className="mb-3 flex-row items-center justify-between">
+                            <Text className="text-foreground text-sm">Уровень</Text>
                             <View className="bg-primary/10 rounded-full px-3 py-1">
-                              <Text className="text-xs font-semibold text-primary">
+                              <Text className="text-primary text-xs font-semibold">
                                 {condition.level} / 10
                               </Text>
                             </View>
@@ -677,31 +782,50 @@ export default function ConditionsScreen() {
                         </View>
                       </View>
 
-                      {isSensor && condition.rules ? (
+                      {(isSensor || (condition.rules && condition.rules.length > 0)) &&
+                      condition.rules ? (
                         <>
-                          <TouchableOpacity
-                            onPress={() => openIntervalDialog(condition.id)}
-                            activeOpacity={0.85}
-                          >
-                            <View className="bg-secondary/30 rounded-2xl px-4 py-4 flex-row items-center">
-                              <View className="bg-primary/10 rounded-2xl p-3">
-                                <Icon as={Clock} size={18} className="text-primary" />
+                          {isSensor ? (
+                            <TouchableOpacity
+                              onPress={() => openIntervalDialog(condition.id)}
+                              activeOpacity={0.85}>
+                              <View className="bg-secondary/30 flex-row items-center rounded-2xl px-4 py-4">
+                                <View className="bg-primary/10 rounded-2xl p-3">
+                                  <Icon as={Clock} size={18} className="text-primary" />
+                                </View>
+                                <View className="ml-3 flex-1">
+                                  <Text className="text-foreground text-sm font-semibold">
+                                    Интервал проверки
+                                  </Text>
+                                  <Text className="text-muted-foreground mt-1 text-xs">
+                                    Как часто устройство сравнивает датчики с условиями
+                                  </Text>
+                                </View>
+                                <View className="bg-primary/10 rounded-full px-3 py-1.5">
+                                  <Text className="text-primary text-xs font-semibold">
+                                    {formatInterval(condition.interval)}
+                                  </Text>
+                                </View>
                               </View>
-                              <View className="flex-1 ml-3">
-                                <Text className="text-sm font-semibold text-foreground">
-                                  Интервал проверки
-                                </Text>
-                                <Text className="text-xs text-muted-foreground mt-1">
-                                  Как часто устройство сравнивает датчики с условиями
-                                </Text>
-                              </View>
-                              <View className="bg-primary/10 rounded-full px-3 py-1.5">
-                                <Text className="text-xs font-semibold text-primary">
-                                  {formatInterval(condition.interval)}
-                                </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <View className="bg-secondary/30 rounded-2xl px-4 py-4">
+                              <View className="flex-row items-center gap-3">
+                                <View className="bg-primary/10 rounded-2xl p-3">
+                                  <Icon as={AlertCircle} size={18} className="text-primary" />
+                                </View>
+                                <View className="flex-1">
+                                  <Text className="text-foreground text-sm font-semibold">
+                                    Дополнительное ограничение
+                                  </Text>
+                                  <Text className="text-muted-foreground mt-1 text-xs">
+                                    Полив по расписанию сработает только если правило по датчику тоже
+                                    выполняется
+                                  </Text>
+                                </View>
                               </View>
                             </View>
-                          </TouchableOpacity>
+                          )}
 
                           <View className="gap-3">
                             {condition.rules.map((rule, ruleIndex) => {
@@ -709,18 +833,21 @@ export default function ConditionsScreen() {
 
                               return (
                                 <View key={ruleIndex} className="bg-secondary/25 rounded-2xl p-4">
-                                  <View className="flex-row items-center justify-between mb-3">
-                                    <Text className="text-sm font-semibold text-foreground">
+                                  <View className="mb-3 flex-row items-center justify-between">
+                                    <Text className="text-foreground text-sm font-semibold">
                                       Правило {ruleIndex + 1}
                                     </Text>
                                     {condition.rules && condition.rules.length > 1 ? (
                                       <TouchableOpacity
                                         activeOpacity={0.85}
-                                        onPress={() => removeRule(condition.id, ruleIndex)}
-                                      >
-                                        <View className="bg-destructive/8 rounded-2xl px-3 py-2 flex-row items-center gap-1.5">
-                                          <Icon as={Trash2} size={13} className="text-destructive" />
-                                          <Text className="text-xs font-medium text-destructive">
+                                        onPress={() => removeRule(condition.id, ruleIndex)}>
+                                        <View className="bg-destructive/8 flex-row items-center gap-1.5 rounded-2xl px-3 py-2">
+                                          <Icon
+                                            as={Trash2}
+                                            size={13}
+                                            className="text-destructive"
+                                          />
+                                          <Text className="text-destructive text-xs font-medium">
                                             Удалить
                                           </Text>
                                         </View>
@@ -728,7 +855,7 @@ export default function ConditionsScreen() {
                                     ) : null}
                                   </View>
 
-                                  <Text className="text-xs font-medium text-muted-foreground mb-2">
+                                  <Text className="text-muted-foreground mb-2 text-xs font-medium">
                                     Показатель
                                   </Text>
                                   <View className="flex-row gap-2">
@@ -738,12 +865,14 @@ export default function ConditionsScreen() {
                                         label={option.shortLabel}
                                         icon={option.icon}
                                         active={rule.field === option.value}
-                                        onPress={() => changeRuleField(condition.id, ruleIndex, option.value)}
+                                        onPress={() =>
+                                          changeRuleField(condition.id, ruleIndex, option.value)
+                                        }
                                       />
                                     ))}
                                   </View>
 
-                                  <Text className="text-xs font-medium text-muted-foreground mt-4 mb-2">
+                                  <Text className="text-muted-foreground mt-4 mb-2 text-xs font-medium">
                                     Сравнение
                                   </Text>
                                   <View className="flex-row gap-2">
@@ -753,21 +882,23 @@ export default function ConditionsScreen() {
                                         label={`${option.label} ${option.shortLabel}`}
                                         active={rule.operator === option.value}
                                         onPress={() =>
-                                          updateRule(condition.id, ruleIndex, { operator: option.value })
+                                          updateRule(condition.id, ruleIndex, {
+                                            operator: option.value,
+                                          })
                                         }
                                       />
                                     ))}
                                   </View>
 
-                                  <View className="mt-4 bg-background rounded-2xl p-4">
-                                    <Text className="text-xs font-medium text-muted-foreground mb-2">
+                                  <View className="bg-background mt-4 rounded-2xl p-4">
+                                    <Text className="text-muted-foreground mb-2 text-xs font-medium">
                                       Порог срабатывания
                                     </Text>
-                                    <Text className="text-center text-2xl font-bold text-foreground">
+                                    <Text className="text-foreground text-center text-2xl font-bold">
                                       {rule.value}
                                       {WATERING_SENSOR_UNITS[rule.field]}
                                     </Text>
-                                    <Text className="text-center text-xs text-muted-foreground mt-1">
+                                    <Text className="text-muted-foreground mt-1 text-center text-xs">
                                       {describeRule(rule)}
                                     </Text>
                                     <Slider
@@ -784,12 +915,12 @@ export default function ConditionsScreen() {
                                       maximumTrackTintColor="#e5e7eb"
                                       style={{ marginTop: 12 }}
                                     />
-                                    <View className="flex-row justify-between mt-1">
-                                      <Text className="text-xs text-muted-foreground">
+                                    <View className="mt-1 flex-row justify-between">
+                                      <Text className="text-muted-foreground text-xs">
                                         {range.min}
                                         {WATERING_SENSOR_UNITS[rule.field]}
                                       </Text>
-                                      <Text className="text-xs text-muted-foreground">
+                                      <Text className="text-muted-foreground text-xs">
                                         {range.max}
                                         {WATERING_SENSOR_UNITS[rule.field]}
                                       </Text>
@@ -800,11 +931,15 @@ export default function ConditionsScreen() {
                             })}
                           </View>
 
-                          <TouchableOpacity activeOpacity={0.85} onPress={() => addRule(condition.id)}>
-                            <View className="rounded-2xl border border-dashed border-primary/40 bg-primary/5 px-4 py-4 flex-row items-center justify-center gap-2">
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => addRule(condition.id)}>
+                            <View className="border-primary/40 bg-primary/5 flex-row items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-4">
                               <Icon as={Plus} size={16} className="text-primary" />
-                              <Text className="text-sm font-semibold text-primary">
-                                Добавить ещё одно правило
+                              <Text className="text-primary text-sm font-semibold">
+                                {isSensor
+                                  ? 'Добавить ещё одно правило'
+                                  : 'Добавить ещё одно ограничение'}
                               </Text>
                             </View>
                           </TouchableOpacity>
@@ -813,30 +948,71 @@ export default function ConditionsScreen() {
 
                       {condition.type === 'schedule' && condition.schedule ? (
                         <>
-                          <TouchableOpacity
-                            onPress={() => openTimePicker(condition.id)}
-                            activeOpacity={0.85}
-                          >
-                            <View className="bg-primary/8 rounded-2xl p-4 flex-row items-center">
-                              <View className="bg-primary/15 rounded-2xl p-3">
-                                <Icon as={Clock} size={20} className="text-primary" />
-                              </View>
-                              <View className="flex-1 ml-3">
-                                <Text className="text-sm font-semibold text-foreground">
-                                  Время полива
-                                </Text>
-                                <Text className="text-xs text-muted-foreground mt-1">
-                                  Нажмите, чтобы изменить время запуска
-                                </Text>
-                              </View>
-                              <Text className="text-3xl font-bold text-primary tracking-wide">
-                                {condition.schedule.time}
+                          <View className="gap-3">
+                            <View className="flex-row items-center justify-between">
+                              <Text className="text-muted-foreground text-xs font-medium">
+                                Время полива
+                              </Text>
+                              <Text className="text-muted-foreground text-xs">
+                                До {MAX_SCHEDULE_TIMES} запусков в день
                               </Text>
                             </View>
-                          </TouchableOpacity>
+
+                            {normalizeScheduleTimes(condition.schedule).map((time, timeIndex) => (
+                              <View
+                                key={`${condition.id}-time-${timeIndex}`}
+                                className="bg-primary/8 flex-row items-center rounded-2xl p-4">
+                                <TouchableOpacity
+                                  className="flex-1"
+                                  onPress={() => openTimePicker(condition.id, timeIndex)}
+                                  activeOpacity={0.85}>
+                                  <View className="flex-row items-center">
+                                    <View className="bg-primary/15 rounded-2xl p-3">
+                                      <Icon as={Clock} size={20} className="text-primary" />
+                                    </View>
+                                    <View className="ml-3 flex-1">
+                                      <Text className="text-foreground text-sm font-semibold">
+                                        Время {timeIndex + 1}
+                                      </Text>
+                                      <Text className="text-muted-foreground mt-1 text-xs">
+                                        Нажмите, чтобы изменить время запуска
+                                      </Text>
+                                    </View>
+                                    <Text className="text-primary text-3xl font-bold tracking-wide">
+                                      {time}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+
+                                {normalizeScheduleTimes(condition.schedule).length > 1 ? (
+                                  <TouchableOpacity
+                                    activeOpacity={0.85}
+                                    onPress={() => removeScheduleTime(condition.id, timeIndex)}
+                                    className="ml-3">
+                                    <View className="bg-destructive/8 rounded-2xl p-3">
+                                      <Icon as={Trash2} size={16} className="text-destructive" />
+                                    </View>
+                                  </TouchableOpacity>
+                                ) : null}
+                              </View>
+                            ))}
+
+                            {normalizeScheduleTimes(condition.schedule).length < MAX_SCHEDULE_TIMES ? (
+                              <TouchableOpacity
+                                activeOpacity={0.85}
+                                onPress={() => addScheduleTime(condition.id)}>
+                                <View className="border-primary/40 bg-primary/5 flex-row items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-4">
+                                  <Icon as={Plus} size={16} className="text-primary" />
+                                  <Text className="text-primary text-sm font-semibold">
+                                    Добавить ещё одно время
+                                  </Text>
+                                </View>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
 
                           <View>
-                            <Text className="text-xs font-medium text-muted-foreground mb-2">
+                            <Text className="text-muted-foreground mb-2 text-xs font-medium">
                               Быстрый выбор дней
                             </Text>
                             <View className="flex-row gap-2">
@@ -852,7 +1028,7 @@ export default function ConditionsScreen() {
                           </View>
 
                           <View>
-                            <Text className="text-xs font-medium text-muted-foreground mb-2">
+                            <Text className="text-muted-foreground mb-2 text-xs font-medium">
                               Дни недели
                             </Text>
                             <View className="flex-row flex-wrap gap-2">
@@ -864,20 +1040,17 @@ export default function ConditionsScreen() {
                                     key={value}
                                     activeOpacity={0.85}
                                     onPress={() => toggleDay(condition.id, value)}
-                                    style={{ width: '23%' }}
-                                  >
+                                    style={{ width: '23%' }}>
                                     <View
-                                      className={`rounded-2xl py-3 items-center border ${
+                                      className={`items-center rounded-2xl border py-3 ${
                                         isActive
                                           ? 'bg-primary border-primary'
                                           : 'bg-secondary/45 border-border/70'
-                                      }`}
-                                    >
+                                      }`}>
                                       <Text
                                         className={`text-sm font-semibold ${
                                           isActive ? 'text-primary-foreground' : 'text-foreground'
-                                        }`}
-                                      >
+                                        }`}>
                                         {label}
                                       </Text>
                                     </View>
@@ -886,6 +1059,19 @@ export default function ConditionsScreen() {
                               })}
                             </View>
                           </View>
+
+                          {(!condition.rules || condition.rules.length === 0) ? (
+                            <TouchableOpacity
+                              activeOpacity={0.85}
+                              onPress={() => addRule(condition.id)}>
+                              <View className="border-primary/40 bg-primary/5 flex-row items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-4">
+                                <Icon as={Plus} size={16} className="text-primary" />
+                                <Text className="text-primary text-sm font-semibold">
+                                  Добавить ограничение по датчику
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          ) : null}
                         </>
                       ) : null}
                     </View>
@@ -897,19 +1083,17 @@ export default function ConditionsScreen() {
         </View>
       </ScrollView>
 
-      <View className="absolute bottom-0 left-0 right-0 px-5 pb-8 pt-3 bg-background/95">
+      <View className="bg-background/95 absolute right-0 bottom-0 left-0 px-5 pt-3 pb-8">
         <TouchableOpacity
           onPress={handleSend}
           disabled={sending || enabledPlantConditions.length === 0}
-          activeOpacity={0.88}
-        >
+          activeOpacity={0.88}>
           <View
-            className={`rounded-2xl py-4 flex-row items-center justify-center gap-2 ${
+            className={`flex-row items-center justify-center gap-2 rounded-2xl py-4 ${
               sending || enabledPlantConditions.length === 0 ? 'bg-muted' : 'bg-primary'
-            }`}
-          >
+            }`}>
             <Icon as={Send} size={18} className="text-primary-foreground" />
-            <Text className="text-base font-semibold text-primary-foreground">
+            <Text className="text-primary-foreground text-base font-semibold">
               {sending ? 'Отправка...' : 'Сохранить и отправить'}
             </Text>
           </View>
@@ -921,8 +1105,7 @@ export default function ConditionsScreen() {
           open={timePickerFor !== null}
           onOpenChange={(open) => {
             if (!open) cancelTimePick();
-          }}
-        >
+          }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Время полива</DialogTitle>
@@ -969,14 +1152,13 @@ export default function ConditionsScreen() {
           if (!open) {
             setIntervalDialogFor(null);
           }
-        }}
-      >
+        }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Интервал проверки</DialogTitle>
           </DialogHeader>
           <View className="py-4">
-            <Text className="text-center text-3xl font-bold text-foreground mb-4">
+            <Text className="text-foreground mb-4 text-center text-3xl font-bold">
               {formatInterval(tempInterval)}
             </Text>
             <Slider
@@ -988,9 +1170,9 @@ export default function ConditionsScreen() {
               minimumTrackTintColor="#16a34a"
               maximumTrackTintColor="#e5e7eb"
             />
-            <View className="flex-row justify-between mt-2">
-              <Text className="text-xs text-muted-foreground">5 мин</Text>
-              <Text className="text-xs text-muted-foreground">6 ч</Text>
+            <View className="mt-2 flex-row justify-between">
+              <Text className="text-muted-foreground text-xs">5 мин</Text>
+              <Text className="text-muted-foreground text-xs">6 ч</Text>
             </View>
           </View>
           <DialogFooter>

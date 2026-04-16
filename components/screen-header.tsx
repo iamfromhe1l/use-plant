@@ -9,26 +9,31 @@ import { ArrowLeft } from 'lucide-react-native';
 interface ScreenHeaderProps {
   title: string;
   subtitle?: string;
+  leftContent?: React.ReactNode;
   rightContent?: React.ReactNode;
   showBack?: boolean;
 }
 
-export function ScreenHeader({ title, subtitle, rightContent, showBack = true }: ScreenHeaderProps) {
+export function ScreenHeader({
+  title,
+  subtitle,
+  leftContent,
+  rightContent,
+  showBack = true,
+}: ScreenHeaderProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View
-      className="bg-card px-6 pb-4 rounded-b-3xl"
-      style={{ paddingTop: insets.top + 4 }}
-    >
+    <View className="bg-card rounded-b-3xl px-6 pb-4" style={{ paddingTop: insets.top + 4 }}>
       <View className="flex-row items-center justify-between">
         <View className="w-11 items-start">
-          {showBack ? (
+          {leftContent ? (
+            leftContent
+          ) : showBack ? (
             <TouchableOpacity
               onPress={() => router.back()}
               className="bg-background/70 rounded-2xl p-2.5"
-              activeOpacity={0.7}
-            >
+              activeOpacity={0.7}>
               <Icon as={ArrowLeft} size={20} className="text-foreground" />
             </TouchableOpacity>
           ) : (
@@ -36,13 +41,11 @@ export function ScreenHeader({ title, subtitle, rightContent, showBack = true }:
           )}
         </View>
 
-        <View className="flex-1 items-center mx-3">
-          <Text className="text-lg font-bold text-foreground" numberOfLines={1}>
+        <View className="mx-3 flex-1 items-center">
+          <Text className="text-foreground text-lg font-bold" numberOfLines={1}>
             {title}
           </Text>
-          {subtitle && (
-            <Text className="text-xs text-muted-foreground mt-0.5">{subtitle}</Text>
-          )}
+          {subtitle && <Text className="text-muted-foreground mt-0.5 text-xs">{subtitle}</Text>}
         </View>
 
         <View className="w-11 items-end">

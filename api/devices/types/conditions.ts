@@ -8,7 +8,8 @@ export interface ISensorRule {
 }
 
 export interface ISchedule {
-  time: string; // HH:MM
+  time?: string; // legacy HH:MM
+  times: string[]; // HH:MM[]
   days: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
 }
 

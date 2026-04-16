@@ -36,6 +36,22 @@ export function sortWateringDays(days: number[]) {
   );
 }
 
+export function normalizeScheduleTimes(
+  schedule?: { time?: string; times?: string[] | null } | null
+) {
+  const rawTimes = Array.isArray(schedule?.times)
+    ? schedule?.times
+    : schedule?.time
+      ? [schedule.time]
+      : ['08:00'];
+
+  return Array.from(
+    new Set(
+      rawTimes.filter((time): time is string => typeof time === 'string' && /^\d{2}:\d{2}$/.test(time))
+    )
+  );
+}
+
 export function describeWateringRule(rule: ISensorRule) {
   const fieldLabel =
     rule.field === 'temperature'
@@ -53,10 +69,16 @@ export function describeWateringCondition(condition: IWateringCondition) {
   }
 
   if (condition.type === 'schedule' && condition.schedule) {
+    const times = normalizeScheduleTimes(condition.schedule).join(', ');
     const days = sortWateringDays(condition.schedule.days)
       .map((day) => WATERING_DAY_LABELS[day])
       .join(', ');
-    return `${condition.schedule.time} • ${days || 'дни не выбраны'}`;
+
+    if (condition.rules?.length) {
+      return `${times || 'время не выбрано'} • ${days || 'дни не выбраны'} • если ${condition.rules.map(describeWateringRule).join(' и ')}`;
+    }
+
+    return `${times || 'время не выбрано'} • ${days || 'дни не выбраны'}`;
   }
 
   return 'Настройте условие';

@@ -174,20 +174,20 @@ export default function TelemetryStatusScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSaving(true);
 
-    const response = await devicesApi.updateDeviceTelemetrySettings(
-      device.deviceId,
-      device.plants.map((plant) => ({
+    const response = await devicesApi.updateDeviceSettings({
+      deviceId: device.deviceId,
+      plants: device.plants.map((plant) => ({
         plantIndex: plant.index,
         telemetryStatusConfig: plantConfigs[plant.index] ?? getPlantTelemetryConfig(plant),
-      }))
-    );
+      })),
+    });
 
     setSaving(false);
 
     if (response.state) {
       await actions.loadDevices();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.success('Пороги телеметрии сохранены');
+      toast.success('Пороги показаний сохранены');
       return;
     }
 
@@ -210,7 +210,7 @@ export default function TelemetryStatusScreen() {
                 <Text className="text-foreground text-base font-semibold">Шкала статусов</Text>
               </View>
               <Text className="text-muted-foreground text-sm">
-                Эти диапазоны определяют badge на карточках телеметрии для каждого растения.
+                Эти диапазоны определяют подписи состояния на карточках показаний для каждого растения.
               </Text>
               <StatusScalePreview />
             </View>
@@ -231,7 +231,7 @@ export default function TelemetryStatusScreen() {
                     <View className="flex-1">
                       <Text className="text-foreground text-base font-semibold">{plant.name}</Text>
                       <Text className="text-muted-foreground text-xs">
-                        Индивидуальные пороги оценки телеметрии
+                        Индивидуальные пороги оценки показаний
                       </Text>
                     </View>
                   </View>
